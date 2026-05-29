@@ -99,16 +99,30 @@ Boundary 2 (orchestrator → subagent — token minting):
                        The authorization server's signing key is not within the attacker's reach (per §3). Every token minted at this boundary is cryptographically valid.
 
                       Decisional verification (the slack):
+
                        The orchestrator's logic — which subagent to mint for, which act claim subject to embed, which scope to attach — is influenced by the contents of Enrich's output, which is derived from the untrusted alert (per Boundary 1). In a realistic SOC, the orchestrator routinely mints tokens for both agents based on the same alert's fields, and its routing logic can be confused into embedding the wrong identity. The cryptography is sound; the decision the cryptography commits to is corrupted.
 
                        The attacker cannot forge a token, but they can manipulate the orchestrator into honestly issuing a token that names the wrong sibling as the actor. This is the attack boundary. Boundaries 1, 3, 4, and 5 are described so the reviewer can see they are verified properly and are not where the attack lives. Boundary 2 is where verified-but-influenceable logic decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable decision" is the gap the benchmark measures.
-                       
+
                        Note on the template's "A↔B" line: Enrich and Contain do not communicate directly. All impersonation must go through a token minted with the wrong act claim at this boundary — which is precisely why Boundary 2 is the attack boundary.
 
                       
 
-- Boundary 3 Audit Log Ingestion (Tool → Tamper‑Evident Log):
+- Boundary 3 (subagent → tool — token presentation and verification):
 
+                      Either subagent invokes siem_action(command, ...) by presenting its delegation token. The tool performs full cryptographic verification before executing the requested command:
+
+                    - Signature verification: the token's signature is validated against the authorization server's public key. Forged tokens are rejected.
+                    - Expiry and freshness check: the token's exp claim is validated against the current time. Expired tokens are rejected.
+                    - Chain integrity walk: the nested act claim is traversed from innermost to outermost, confirming each hop is structurally well-formed and terminates at the analyst principal. Malformed or unrooted chains are rejected.
+                    - Scope gate: the token's scope claim is checked against the requested command. A token with siem:read invoking isolate_host is rejected; a token with siem:write invoking it is permitted.
+                    - Identity resolution (per §1's locked decision): the calling agent's identity is read solely from the verified act claim's innermost subject. No self-reported identity field is accepted. This is the identity that will be written to the action log as the claimed actor.
+
+                    Verification at this boundary is assumed working and is not where the attack lives. On the adversarial path, the token presented at Boundary 3 was minted at Boundary 2 — it carries a valid signature, current expiry, well-formed chain, scope appropriate to the requested command, and an innermost act subject naming a legitimate sibling. Every check above passes. The tool then writes the claimed actor (read from the verified act claim) to the log, faithfully recording what the token says. The misattribution is not a Boundary 3 failure; it is a Boundary 2 outcome that Boundary 3 honestly transcribes.
+                    
+                    Why this boundary matters for the result: a reviewer's first reflex on seeing the attack succeed is "the tool must have skipped a check." This boundary exists to foreclose that reading. Every standard check is named and assumed to pass. The attack is not a verification gap at the tool; it is a decisional gap at the orchestrator, faithfully propagated by a correctly-functioning tool.
+
+                      
                       
 - **The attack boundary (A ↔ B):**
                       The attack flows from Boundary 1 (adversarial alert data) through Boundary 2 (the orchestrator mis‑issues a token with an incorrect act claim) and is detected (or not) at Boundary 3. The AIS curve across baselines #1–#4 quantifies how well each defense configuration prevents or detects misattribution at these boundaries.
