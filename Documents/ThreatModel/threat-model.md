@@ -30,7 +30,6 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                     act claim nests back to the analyst. The orchestrator is the delegating authority; it does not call query_siem itself. 
                     
                     ⟨Critical call: is the orchestrator in or out of the attacker's reach? If the attack mechanism is confused-deputy via the orchestrator, the orchestrator is part of the attack surface; if it's token reuse or scope spoofing at the subagent layer, the orchestrator is trusted. This decision is really a §5 decision, but it determines whether you describe the orchestrator as trusted here.⟩
-
                                                                                 |
                                                                                 V
                   - Trusted: The orchestrator must be inside the attackers reach for the sibling-impersonation attack to be realistic and forensically  
@@ -70,10 +69,6 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
 
 ## 2. Trust boundaries
 
-> Draw the lines where trust changes. Between which components does a token get checked? Where does
-> an attacker's input enter? The A/B boundary is the one that matters most — say precisely what is
-> trusted on each side of it.
-
 Trust boundaries answers two questions a reviewer will absolutely ask: where does a token get checked (so they can see your defenses are at the right places), and where does the attacker's input enter (so they can see your attack model is realistic).
 
 **Boundary 1 (principal → orchestrator)**:
@@ -104,9 +99,6 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
                        The attacker cannot forge a token, but they can manipulate the orchestrator into honestly issuing a token that names the wrong sibling as the actor. This is the attack boundary. Boundaries 1, 3, 4, and 5 are described so the reviewer can see they are verified properly and are not where the attack lives. Boundary 2 is where verified-but-influenceable logic decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable decision" is the gap the benchmark measures.
 
-
-                      
-
 **Boundary 3 (subagent → tool — token presentation and verification)**:
 
                       Either subagent invokes siem_action(command, ...) by presenting its delegation token. The tool performs full cryptographic verification before executing the requested command:
@@ -128,9 +120,9 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
 **Boundary 4 (tool → action log — claimed-actor write)**:
 
-                    After Boundary 3's verification completes and the requested command executes, the tool writes a record to the action log: {claimed_actor, claimed_scope, claimed_principal_chain, command, target, timestamp, token_chain_summary}. The claimed_actor field is the identity resolved at Boundary 3 — i.e., the innermost subject of the verified act claim. The tool does not have access to ground truth (it cannot independently verify which agent process actually originated the call) and so writes what the token says, faithfully.
+                      After Boundary 3's verification completes and the requested command executes, the tool writes a record to the action log: {claimed_actor, claimed_scope, claimed_principal_chain, command, target, timestamp, token_chain_summary}. The claimed_actor field is the identity resolved at Boundary 3 — i.e., the innermost subject of the verified act claim. The tool does not have access to ground truth (it cannot independently verify which agent process actually originated the call) and so writes what the token says, faithfully.
 
-                    Verification at this boundary depends on the active baseline:
+                      Verification at this boundary depends on the active baseline:
 
                       - Baselines 1–3 (no tamper-evidence): the log is a regular append-only file. Entries are correct at write time but the log itself carries no integrity proof. An adversary with later access to the log could in principle modify, delete, or reorder entries; this is out of scope for v1's threat model (the attacker's capability is alert-content control, per §3), but it means the log alone is not a forensic record.
 
@@ -183,14 +175,59 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
 ## 3. Adversary model
 
-> Be specific and honest about the attacker's power. An over-powered attacker makes the result
-> meaningless ("of course it broke"); an under-powered one makes it trivial. Answer each:
+The adversary is modeled at the gray-box knowledge level: they know the kind of system they are attacking and the kind of decisions it makes, but not its precise prompts, extraction code, or internal scope strings. This matches the knowledge profile of every real-world precedent cited in §2 (Cline February 2026; Log4Shell; Splunk XSS; Salesloft Drift; ELK injection). The system's defenses are not assumed secret — only its specific implementation details.
 
-- **What the adversary CAN do:** (e.g., inject text into Subagent A's task input)
-- **What the adversary CANNOT do:** (e.g., cannot read the ground-truth store; cannot forge the auth server's signing key)
-- **What the adversary KNOWS:** (e.g., knows B exists and B's scope name)
-- **Adversary's goal:** cause an action truly performed by A to be attributed to B in the log.
+**What the adversary CAN do:**
 
+                      - Control the text content of one or more SIEM alerts that will be processed by the Enrich agent. This includes any field of the alert that originates from outside the security perimeter: hostnames, URLs, file paths, log lines, email subjects, command-line strings, user-agent headers, and other free-text fields routinely populated from external observation.
+                      - Cause those alerts to enter the SIEM through normal channels (i.e., the attacker does not need to bypass the SIEM's ingestion controls; they only need to cause activity that legitimately produces an alert whose content they shaped).
+                      - Repeat the attack — there is no rate limit assumed in the threat model; the attacker can make many attempts.
+
+**What the adversary CANNOT do:**
+
+                      - Compromise the analyst, the analyst's session, or the analyst's task prompt.
+                      - Compromise the SIEM, upstream sensors, or any other system in the data path before Enrich.
+                      - Forge or modify delegation tokens. The authorization server's signing key is out of reach (per §2 Boundary 2's cryptographic verification).
+                      - Read or write the ground-truth recorder. The harness process and its credentials are out of reach (per §2 Boundary 5's three independence axes).
+                      - Tamper with the action log after it is written. (Out of scope for v1 — see backlog in §8.)
+                      - Compromise the orchestrator, either subagent, or the tool as processes. The attacker influences these components only by controlling the data they consume; they do not execute code inside them.
+
+**What the adversary KNOWS:**
+
+                      - The system uses a multi-agent SOC triage architecture with an orchestrator and at least two sibling agents differentiated by
+                        scope/consequence.
+                      - Alert content is parsed by an early-stage agent and influences downstream routing decisions, including which agent is invoked for
+                        which actions.
+                      - Some form of cryptographic delegation (RFC 8693 or equivalent) is in use; tokens carry identity and scope claims that cannot be
+                        directly forged.
+                      - Tool calls are recorded in an audit log; some baselines may make this log tamper-evident.
+
+**The adversary does NOT know:**
+
+                      - The exact text of the orchestrator's prompt or system instructions.
+                      - The exact field-extraction logic in Enrich.
+                      - The exact scope strings, agent names, or tool command names as they appear in code. (They may have plausible guesses derived from
+                        public SOC/SOAR documentation, but they have no oracle to confirm them.)
+                      - Which baseline defense configuration is active during any given attempt.
+                      - The internal state of the ground-truth recorder.
+
+This knowledge profile matches an attacker who has read public documentation about agent-based SOC tooling, observed the system's external behavior from afar (e.g., as an upstream actor whose alerts get triaged), or reverse-engineered the system from observable side effects — but who does not have insider access to the codebase or runtime state.
+
+**Adversary's goal:**
+                         Cause an action truly performed by Agent-Contain to be attributed to Agent-Enrich in the action log, such that a SOC analyst reviewing the log sees no record of the high-consequence action having been taken by the high-consequence agent.
+                         
+                         The attack succeeds when the AIS scorer (per §4) records a mismatch on actor, scope, or principal_chain for an action that the ground-truth recorder confirms was performed by Contain. 
+
+                         The attack is "covering tracks," not "privilege escalation" — the attacker is not trying to gain new authority, only to hide who exercised authority that already existed.
+
+**What the adversary does not need:**
+
+                          - zero-day vulnerabilities
+                          - model jailbreaks
+                          - instruction-override directives
+                          - adversarially optimized embeddings
+
+                          The threat is structural and exploits documented confused-deputy dynamics (Hardy 1988; Cline 2026; CSA AI Safety Initiative confused-deputy research note, March 2026). The attacker's craft is in shaping alert content such that legitimate parsing and routing produce a token whose act claim names the wrong sibling.
 ---
 
 ## 4. What "true attribution" means (the ground-truth definition)
