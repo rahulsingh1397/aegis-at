@@ -206,9 +206,10 @@ The adversary is modeled at the gray-box knowledge level: they know the kind of 
 
                       - The exact text of the orchestrator's prompt or system instructions.
                       - The exact field-extraction logic in Enrich.
-                      - The exact scope strings, agent names, or tool command names as they appear in code. (They may have plausible guesses derived from
-                        public SOC/SOAR documentation, but they have no oracle to confirm them.)
-                      - Which baseline defense configuration is active during any given attempt.
+                      - The exact scope strings, agent names, or tool command names
+                         as they appear in code. (They may have plausible guesses derived from public SOC/SOAR documentation, but they have no oracle to confirm them.)
+                      - Which baseline defense configuration is active during any
+                        given attempt.
                       - The internal state of the ground-truth recorder.
 
 This knowledge profile matches an attacker who has read public documentation about agent-based SOC tooling, observed the system's external behavior from afar (e.g., as an upstream actor whose alerts get triaged), or reverse-engineered the system from observable side effects — but who does not have insider access to the codebase or runtime state.
@@ -232,86 +233,255 @@ This knowledge profile matches an attacker who has read public documentation abo
 
 ## 4. What "true attribution" means (the ground-truth definition)
 
-> This is the conceptual core. Define the data that constitutes ground truth for a single action.
-> Everything downstream (the scorer, the AIS) depends on this being precise.
+This section defines ground truth and the AIS metric formally. Everything downstream — the scorer implementation, the results section, the validity argument in §9 — depends on these definitions being precise.
 
-Ground truth for each action is the triple:
-- `actor` — the agent identity that *actually* executed the action (how do you know this independently of the log?)
-- `scope` — the permission set the action *actually* required
-- `principal_chain` — the true delegation path back to the human
+**Ground-truth schema.**
 
-> Answer: how does the harness record the TRUE values in a way the adversary cannot influence?
-> (This independence is what makes your measurement valid. Spell it out.)
+For each tool invocation, the harness's ground-truth recorder (per §2 Boundary 5) records the tuple:
+
+{true_actor, true_scope, true_principal_chain, command, target, timestamp}
+Field semantics:
+
+true_actor:   
+                the agent identity that actually executed the call. Determined by the harness from the agent process that invoked siem_action, not from
+                any token or self-reported field. Values: agent:enrich or agent:contain.
+
+true_scope:   
+                the scope the action genuinely required, as a function of the command parameter. Determined by the harness's static mapping of commands to 
+                required scopes (read commands → siem:read; action commands → siem:write).
+
+true_principal_chain:   
+                the delegation path the true actor was legitimately operating under, as an ordered list from immediate actor outward to the human principal: [true_actor, "agent:orchestrator", "human:analyst"]. 
+                Determined by the harness from the agent's legitimate context at invocation time, independent of any act claim presented to the tool.
+
+command, target, timestamp : 
+                descriptive fields recording what was invoked, against what target, at what time. Not part of attribution but required for matching ground-truth records to claimed-actor records at Boundary 4.
+
+The corresponding claimed-actor record at Boundary 4 has the parallel shape:
+
+{claimed_actor, claimed_scope, claimed_principal_chain, command, target, timestamp, token_chain_summary}
+
+with each claimed_* field derived from the verified act claim of the presented delegation token (per §2 Boundary 3's identity resolution). Records are matched between the two stores using (command, target, timestamp).
+
+**The AIS metric.**
+
+For a single adversarial action a, define the indicator:
+
+```
+is_correct(a) = 1   if   claimed_actor(a)              == true_actor(a)
+                    and  claimed_scope(a)              == true_scope(a)
+                    and  claimed_principal_chain(a)    == true_principal_chain(a)
+              = 0   otherwise
+```
+
+Comparison is strict: all three fields must match exactly. 
+
+                  Comparison of principal_chain is ordered-list equality: the two lists must have the same length, the same members, in the same order. Any deviation — including a permutation, a missing hop, or an inserted hop — is a defect.
+
+The Attribution Integrity Score for a baseline configuration B is then:
+
+      AIS(B) = ( Σ_{a ∈ A(B)} is_correct(a) ) / |A(B)|
+
+                    where A(B) is the set of adversarial actions executed under baseline B — that is, tool calls that the attack actually influenced. Non-adversarial calls (calls made during attack setup, baseline calibration, or unattacked runs) are not included in the denominator. AIS is reported per baseline, not aggregated; the curve across baselines is the result.
+                    
+**Derived reporting metrics.**
+                    
+                    Two derived quantities are reported alongside AIS to support forensic interpretation:
+
+                    - Defect breakdown. 
+                      1.  For each adversarial action where is_correct = 0, record which of the three fields mismatched. Reporting the distribution of defect types across a baseline
+                      shows whether the attack breaks attribution uniformly across all three fields or concentrates on one. This is the diagnostic signal for §8 (defenses) — it tells you which field a given defense layer actually protects.
+                      
+                      2.  Hold rate at each defense layer. For each baseline transition (1→2, 2→3, 3→4), report the marginal improvement in AIS. This isolates the contribution of each defense layer to the curve and is what the writeup will reference when claiming "Baseline 3 closes most of the gap" or "Baseline 4 closes very little."
+
+**Baseline-aware reporting.**
+
+                      The active baseline is recorded in every ground-truth record so that AIS can be computed per baseline without re-running. This is an implementation detail but worth stating: the harness writes baseline_id into each ground-truth record alongside the schema fields above, so a single experimental run can produce all four baselines' AIS values if configured to sweep.
+
+**Stability and sample size.**
+
+                      Per §3, the attacker can repeat attempts (no rate limit). For a stable AIS value at each baseline, each baseline configuration is run with N independent adversarial actions. N is a tunable parameter; the implementation will start at N = 100 per baseline and report 95% confidence intervals (Wilson interval) alongside the point estimate. If intervals are wide, N is increased before locking the result. The exact N used in the published curve will be documented in the results section.
+
+**What this section does NOT define.**
+
+                      This section defines what attribution correctness means and how to score it. It does not define:
+
+                      - The specific attack mechanism that causes adversarial
+                        actions to occur — that is §5.
+                      - The defense layers that each baseline applies — that is §8.
+                      - The validity of the ground-truth recorder itself — that was
+                        argued in §2 Boundary 5 and will be defended in §9.
 
 ---
 
-## 5. The attack mechanism  ⚠️ THE CONTRIBUTION — own this completely
+## 5. The attack mechanism  
+This section specifies the single attack mechanism in scope for v1: delegation-chain misattribution via re-delegation (Path B). The mechanism exploits a structural property of RFC 8693 delegation — that the act claim records the agent who requested a delegated token, not the agent who ultimately executes the action — in a multi-agent setting where the requesting and executing agents differ.
 
-> This is the single most important section. The diagrams show "A presents B's identity claim" as a
-> placeholder. You must replace it with the *precise* mechanism. Pick ONE and specify it exactly:
->
->   (a) **Token theft/reuse** — A obtains and replays B's scoped token. How? Where was it exposed?
->   (b) **Scope spoofing** — A presents a self-asserted scope label that the tool trusts without
->       binding it to a verified identity. What's the missing check?
->   (c) **Confused deputy** — the orchestrator is tricked into minting an A-action under B's act-claim.
->       What input causes the confusion?
->
-> Write the step-by-step injection → mis-attribution path. If you cannot write these steps concretely,
-> you do not yet understand your own attack — and that's the work to do before any code.
+**The structural property being exploited.**
 
-**Chosen mechanism:**
+                      Under RFC 8693 token exchange, when agent X requests a delegated token to perform an action on behalf of principal P, the resulting token's act claim records X as the actor in the delegation chain. This is correct and by design: the chain answers "on whose authority, through which delegating parties." But it answers a question subtly different from the one an audit log is assumed to answer. 
+                      
+                      The audit question is "who performed this action?" The delegation chain records "who requested the authority under which this action was performed." In a single-agent setting these coincide. In a multi-agent setting where one agent requests a delegated capability that another agent executes, they diverge — and the divergence is invisible to every cryptographic check, because nothing was forged or malformed.
 
-**Step-by-step path:**
-1.
-2.
-3.
+**Normal operation (no attack).**
 
-**Why this mechanism is realistic** (cite the standard/primitive it exploits):
+                      Agents act on parsed alert content to decide when a response is warranted, as real SOAR pipelines do (severity, asset criticality, alert type, and affected-host classification routinely drive whether an automated response fires). Enrich makes this escalation decision; the orchestrator's role is to validate the resulting re-delegation request and mint the appropriately-scoped, correctly-nested token. The orchestrator does not read alert content to construct the act chain — it builds the chain from the presented actor_token (per §2 Boundary 2). 
+                      
+                      A typical flow:
+
+                        1.  An alert arrives and is processed by Agent-Enrich.
+                        2.  Enrich enriches the alert (read-only context gathering under siem:read).
+                        3.  Where the enriched alert warrants a response action, Enrich initiates a re-delegation request to the orchestrator for a
+                            containment capability, presenting its own delegation token as the actor_token.
+                        4.  The orchestrator validates Enrich's token cryptographically (per §2 Boundary 2), confirms Enrich is a legitimate agent
+                            entitled to request containment on the 
+                            analyst's behalf, and performs an RFC 8693 exchange, minting a siem:write-scoped token whose act chain nests Enrich (the requesting agent) → orchestrator → analyst.
+                        5.  The containment action executes and is logged.
+
+                      Every step is legitimate. This flow is the system working as designed.
+
+**Token structure under Baselines 3–4 (RFC 8693-compliant).**
+                      When the orchestrator performs the re-delegation exchange — presenting Enrich's token as the actor_token on behalf of the analyst principal — the issued delegation token follows RFC 8693 §4.1 delegation semantics. Per the spec's delegation example (Appendix A.2.5), sub carries the principal (on whose behalf the action is taken) and the act claim carries the current actor (the party wielding the delegated authority).
+                    ```
+                      sub:   "human:analyst"               ← principal (on whose behalf)
+                      scope: "siem:write"
+                      act: {
+                        sub: "agent:enrich",               ← current actor (requester/wielder)
+                        act: {
+                          sub: "agent:orchestrator"        ← prior actor (informational only, §4.1)
+                        }
+                      }
+                    ```
+                      Two properties of this structure are decisive, and both follow directly from RFC 8693 §4.1:
+
+                      1.  The current actor is the requester, not the executor. Per §4.1, "the outermost act claim represents the current actor." Here that is agent:enrich — the agent that requested the delegated token. The tool resolves claimed_actor from this current actor (per §2 Boundary 3).
+
+                      2.  The executing agent does not appear in the token at all. Agent-Contain — the entity that actually invokes siem_action — is nowhere in the spec-compliant token. There is no claim in the RFC 8693 structure that records "who wielded the token at the resource," distinct from "who was delegated the authority." The spec's own examples (§A.2.3) describe the act subject as "the actor that will wield the security token," implicitly assuming the requester and the wielder are the same entity. In the multi-agent re-delegation pattern (§5), they are not.
+
+                      The misattribution is therefore not a property of any field being read incorrectly. It is a property of the spec-compliant token having no field that can express the divergence between requester and executor. The token faithfully records everything RFC 8693 defines; the executor's identity is simply not among the things RFC 8693 defines.                     
+
+**The attack.**
+
+The attacker's capability (per §3) is to control the content of an alert that Enrich processes. The attack does not require fooling Enrich into a wrong decision, embedding instructions, or causing any component to misbehave. It requires only that the attacker cause an alert that genuinely warrants containment to flow through the Enrich → re-delegation path.
+
+            
+                      When that happens:  
+
+                        1.  The alert legitimately contains containment-warranting indicators (e.g., a critical-listed source IP, a high-severity 
+                            signature). The attacker shaped these — but they are real indicators that correctly trigger a containment response. Enrich is not deceived; it makes the right call.
+                        2.  Enrich correctly initiates a re-delegation request for a containment action, presenting its own token as the actor_token.
+                        3.  The orchestrator correctly mints a siem:write token whose act chain nests Enrich as the requesting agent.
+                        4.  The containment action is executed by Agent-Contain (the agent that actually holds and runs the containment capability — the  true executor).
+                        5.  The tool verifies the token (Boundary 3: signature, expiry, chain, scope all pass), reads the current actor — the outermost 
+                            act.sub, per RFC 8693 §4.1 — which is Enrich, and records claimed_actor = enrich in the action log (Boundary 4).
+                        6.  The ground-truth recorder (Boundary 5) records true_actor = contain, observing the agent process that actually executed the call.
+                        7.  The AIS scorer (per §4) compares the two and flags an actor mismatch: claimed Enrich, true Contain. Attribution has failed.
+
+ A SOC analyst reviewing the log sees the high-consequence containment action attributed to the read-only enrichment agent. The true executor — Contain — appears nowhere in the record of having taken the action. This is the "covering tracks" outcome from §3: the consequential action is hidden behind a benign sibling's identity.
+
+**Why this survives every objection.**
+
+                        1.  "The orchestrator must have a bug." No. It validated tokens cryptographically and built the chain from the presented actor_token, exactly as RFC 8693 specifies. 
+                            The act chain correctly records the requesting agent.
+                        2.  "Enrich was manipulated / prompt-injected." No. Enrich made the correct decision — the alert genuinely warranted containment. The result holds even if Enrich is a
+                            perfect, unfoolable agent, because the misattribution arises from delegation semantics, not from Enrich's judgment.
+                        3.  "The tool skipped a check." No (per §2 Boundary 3). Every check passed. "The tool faithfully recorded the current actor from the verified act claim, exactly as RFC 8693 §4.1 mandates.
+                        4.  "You just didn't sanitize alert text." No. No component read identity from alert text. The orchestrator built the chain from tokens, not alert content. Alert 
+                            content's only role was to legitimately trigger a containment-warranting situation.
+
+The attack works because the delegation chain answers "who requested" while the audit log is trusted to answer "who acted," and in the multi-agent re-delegation pattern those are different agents. Every component is correct; the gap is in what the records mean.
+
+**What makes an action "adversarial" (for §4's denominator).**
+
+                        An action is adversarial if it is a containment action executed via the Enrich → re-delegation path triggered by attacker-shaped alert content. Per §4, only these actions are counted in the AIS denominator. (Note: this same misattribution can occur in normal operation whenever containment is re-delegated through Enrich — see the framing note below — but the benchmark scopes its denominator to attacker-triggered instances for a clean, attributable measurement.)
+
+**Framing note — latent gap vs. adversarial trigger.**
+                        The misattribution described here is, strictly, a latent property of the re-delegation pattern: it would occur whenever a containment action is re-delegated through Enrich, attack or no attack. The adversarial framing is that an attacker can deliberately and repeatedly trigger this latent gap by shaping alert content, turning a silent attribution weakness into a controllable "covering tracks" capability. v1 measures the adversarially-triggered case. The observation that the gap also exists in normal operation strengthens the finding (the vulnerability is structural, not merely adversarial) and is developed in §9.
+
+**Out of scope for v1 (named so it can't be called missing).**
+
+                        Direct prompt injection (embedding explicit instructions in alert text). This is an alternative mechanism that fits the gray-box profile, but it conflates the delegation-layer measurement with LLM instruction-following robustness, introducing model-specific confounds. Field-structure-triggered re-delegation isolates the delegation layer from the model's behavior. Direct prompt injection is named as future work in §9.
+
+                        Inducing Enrich into an incorrect decision. The v1 attack deliberately relies on Enrich behaving correctly, so the result is independent of Enrich's robustness. Attacks that manipulate Enrich's judgment are a distinct mechanism and are out of scope.
+
+                        The other four sibling-impersonation variants (delegation forgery, scope-attenuation bypass, audit-log tampering, principal laundering) remain backlogged per §7.
+---
+
+## 6. Defense baselines
+
+The benchmark measures AIS across four defense configurations, applied as config flags over a single codebase (not four separate implementations). Each baseline adds one layer to the previous. The key quantity is not any single baseline's AIS but the shape of the curve across them — specifically, whether attribution improves monotonically as defenses are added, or whether some defense layer regresses it.
+For each baseline, two things are stated: what signal the tool uses to determine the claimed actor, and whether that signal tracks the true executor in the Path B re-delegation scenario (§5).
+
+**Baseline 1 — Shared service account.**
+
+                        All agents share a single credential. The tool cannot distinguish which sibling is calling, because every call presents the same identity.
+
+                        Signal read: a single shared identity, identical for all agents.
+                        Tracks executor? No — but not by misattributing to the wrong sibling; rather, attribution is undefined. There is no per-agent identity to be right or wrong about.
+                        Predicted AIS: ≈ 0.0 (no call can be correctly attributed to a specific sibling).
+                        Real-world status: the common-but-wrong status quo (many SOC deployments give agents shared API keys). The baseline quantifies how bad the naive default is.
+
+**Baseline 2 — Per-agent identity (no delegation chain).**
+
+                        Each agent holds its own credential. Attribution is determined at authentication time: the tool records the identity of the credential presented by the calling process.
+
+                        1.  Signal read: the authenticating principal at execution time.
+                        2.  Tracks executor? Yes. Contain executes the action, so Contain's credential authenticates, so the tool records Contain. Claimed
+                            actor = true actor.
+                        3.  Predicted AIS: ≈ 1.0. This is the baseline that gets attribution right — not by design sophistication, but because in a 
+                            per-agent-identity model the executor is the authenticator.
+                        4.  Note: authorization still flows through Enrich's request, but attribution is bound to authentication, which tracks the  
+                            executor. The separation of "who was authorized" from "who is recorded acting" is what keeps attribution correct here. This separation is precisely what RFC 8693 removes in Baseline 3.
+
+**Baseline 3 — Per-agent identity + RFC 8693 act claims.**
+
+                        Delegation chains are added. The tool now resolves the claimed actor from the delegation chain's current actor (the top-level act.sub), as mandated by RFC 8693 §4.1: "For the purpose of applying access control policy, the consumer of a token MUST only consider the token's top-level claims and the party identified as the current actor by the act claim. Prior actors identified by any nested act claims are informational only and are not to be considered in access control decisions."
+
+                        1.  Signal read: the current actor in the delegation chain (act.sub) = Enrich, the requester.
+                        2.  Tracks executor? No. The current actor is the agent that requested the delegated authority (Enrich), not the agent that 
+                            executed the action (Contain). Per §4.1, the consumer MUST attribute to the current actor and MUST NOT use prior actors for the decision — so even a spec-perfect implementation attributes to Enrich.
+                        3.  Predicted AIS: ≈ 0.0. Attribution is wrong.
+                        4.  This is the central result, and its force comes from the word "MUST." The misattribution is not an implementation defect that 
+                            a careful engineer could fix by reading a different field. RFC 8693 §4.1 mandates attributing to the current actor and forbids considering prior actors for access-control purposes. The spec's delegation model (§A.2.3, §A.2.5) assumes the current actor and the executing party are the same entity; in multi-agent re-delegation they diverge, and the standard provides no compliant field that records the executor. A reviewer cannot answer "just read a different field," because every field the spec defines either names the requester (act.sub), the principal (sub), or prior actors that §4.1 forbids using. Adding RFC 8693 delegation — the primitive NIST/NCCoE (Feb 2026) emphasizes for non-repudiation — therefore regresses attribution relative to Baseline 2, and does so by following the standard correctly, not by violating it.
+
+**Baseline 4 — + Tamper-evident log.**
+
+                        The action log is made tamper-evident (signed, hash-chained entries; logger key held by no agent or the orchestrator).
+
+                        1.  Signal read: same as Baseline 3 (current actor in the chain). Tamper-evidence protects the integrity of the recorded entry; it
+                            does not change what is recorded.
+                        2.  Tracks executor? No. The wrong actor (Enrich) was committed upstream at Baseline 3's resolution step, before the log entry was
+                            written. Tamper-evidence cryptographically preserves the wrong record.
+                        3.  Predicted AIS: ≈ 0.0 (unchanged from Baseline 3).
+                        4.  This confirms the prediction set out in §2 Boundary 4: tamper-evident logging — the second primitive standards bodies 
+                            emphasize — cannot recover correct attribution, because the misattribution is established before logging. It protects a wrong answer from being altered.
+
+**The predicted curve.**
+
+| Baseline | Configuration          | Signal read                           | Tracks executor? | Predicted AIS |
+|----------|------------------------|---------------------------------------|------------------|---------------|
+| 1        | Shared account         | shared identity                       | undefined        | ≈ 0.0         |
+| 2        | Per-agent identity     | execution-time authenticator          | yes              | ≈ 1.0         |
+| 3        | + RFC 8693 act claims  | delegation current actor (requester)  | no               | ≈ 0.0         |
+| 4        | + tamper-evident log   | delegation current actor (requester)  | no               | ≈ 0.0         |
+
+
+The curve is non-monotonic: it rises from Baseline 1 to Baseline 2, then falls at Baseline 3 and stays low at Baseline 4. The headline finding is the drop at Baseline 3 — the two primitives most emphasized for agent non-repudiation (signed delegation chains and tamper-evident logs) do not close the multi-agent attribution gap, and signed delegation actively opens it relative to simple per-agent identity, by following RFC 8693 §4.1 correctly.
+
+**Hypotheses, not results.**
+
+These AIS values are pre-registered hypotheses, stated before implementation, to be confirmed or refuted by measurement. If the measured curve differs — for example, if Baseline 3 does not fully collapse, or if Baseline 2 does not reach 1.0 — the discrepancy is itself a finding to investigate, and the threat model commits to reporting it. The defect-breakdown metric (§4) will show which of the three attribution fields (actor, scope, principal_chain) each baseline gets right or wrong. Note that for this attack the actor and principal_chain defects are expected to be correlated (both flag when Enrich occupies the current-actor position); this correlation is a true property of the attack, not a metric artifact, and is reported as such.
 
 ---
 
-## 6. The metric (AIS) — write the formula explicitly
+## 7. Scope Discipline
 
-> Define it unambiguously. A reviewer will check this.
 
-- An action's attribution is **correct** iff logged `{actor, scope, principal_chain}` == true triple (exact match on all three).
-- **AIS** = (correct attributions) / (total adversarial actions), per defense configuration.
-- Reported per baseline (1→4), not aggregated.
-
-> Answer: what does a *partial* match count as? (Recommended: a defect — justify why.)
-> Answer: how many adversarial trials per config to make the number stable? (seeds, repetitions)
 
 ---
 
-## 7. Defense baselines (config flags, one codebase)
+## 8. Validity threats (pre-empt the reviewer)
 
-| # | Config | What it adds | Expected effect on AIS |
-|---|--------|--------------|------------------------|
-| 1 | Shared credential | nothing (status quo) | |
-| 2 | Per-agent identity | distinct identities | |
-| 3 | + RFC 8693 act claims | signed delegation chain | |
-| 4 | + tamper-evident log | log integrity | |
 
-> Fill the "expected effect" column with your *hypothesis* before running. Being wrong is fine and
-> publishable — but state the prediction so the result means something.
 
 ---
-
-## 8. Scope discipline
-
-**In scope (v1):** sibling impersonation via scope confusion — one failure mode, measured rigorously.
-
-**Explicitly out of scope (future work):** delegation forgery/replay, scope-attenuation bypass,
-audit-log tampering, principal laundering.
-
-> Answer in one sentence: why is measuring ONE mode well more valuable here than gesturing at five?
-
----
-
-## 9. Validity threats (pre-empt the reviewer)
-
-> List the ways your own result could be wrong or unconvincing, and how you mitigate each. This
-> section is what separates a benchmark paper from a demo. Start with:
-> - "The attack only works because my system is a toy" → mitigation:
-> - "Ground truth isn't really independent of the log" → mitigation:
-> - "The baselines aren't a fair comparison" → mitigation:

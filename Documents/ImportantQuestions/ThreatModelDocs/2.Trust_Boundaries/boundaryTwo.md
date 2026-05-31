@@ -16,20 +16,15 @@ deferred questions so they aren't lost.
 - The architecture has no direct A↔B communication path. All impersonation
   must go through a token minted with the wrong `act` claim at Boundary 2.
 
-## §5 hook — structural reason the attack is plausible
+## §5 hook — RESOLVED (see §5 alignment note below)
 
-(paste into §5's adversary-capability or attack-mechanism subsection
-when writing it)
-
-In a realistic SOC, the orchestrator routinely mints tokens for BOTH
-Enrich and Contain based on the same alert's fields — one alert often
-triggers multiple workflow steps (enrich the indicator AND respond to it).
-The orchestrator's routing logic decides which agent to invoke based on
-parsed alert fields. The adversarial alert content (via Enrich's output,
-per Boundary 1's locked path) manipulates this routing logic so that the
-orchestrator embeds Enrich's identity in the `act` claim of a token
-carrying Contain's scope (or vice versa). This matches actual SOAR
-orchestrator behavior; the attack is a design tension, not a one-off bug.
+This hook originally proposed an orchestrator-routes-on-alert-fields
+mechanism. That was REJECTED during §5 development as the
+"broken-orchestrator trap" (orchestrator must never derive identity
+from alert content). The locked mechanism is Path B (re-delegation),
+where Enrich — not the orchestrator — reads alert content and decides
+to escalate. See the "§5 alignment note" below for the resolved
+chain of influence.
 
 ## §9 hook — validity-threat the reviewer will raise
 
@@ -53,10 +48,44 @@ Pre-empt this in §9 with three points:
 ## Open questions deferred to later sections
 
 - How exactly does Enrich's output influence the orchestrator's routing
-  decision? Field extraction? Summarization? Direct field substitution
-  into a tool call? Decide in §5 (attack mechanism). For now, the
-  threat model is agnostic about the precise plumbing — what matters
-  here in §2 is that the influence path exists.
+  decision? RESOLVED in §5: Enrich makes an escalation decision based on
+  alert content and sends a re-delegation request; the orchestrator acts
+  on that request, not on raw alert content.
 - Does the orchestrator log its own minting decisions? If so, that log
-  is a candidate signal for detection in defenses (Baseline 4 territory).
-  Note for the defenses/baselines section.
+  is a candidate signal for detection in defenses. Carry into §6.
+
+## §5 alignment note (added after §5 mechanism locked)
+
+Boundary 2 says the orchestrator's decision is "influenced by the
+contents of Enrich's output, which is derived from the untrusted
+alert." After §5 locked Path B (re-delegation), the precise chain
+of influence is now pinned down:
+
+    alert content → Enrich's escalation decision → Enrich's
+    re-delegation request → orchestrator's minting decision
+
+"Enrich's output" in Boundary 2 = the re-delegation request Enrich
+sends to the orchestrator. That request is what influences the
+orchestrator's minting.
+
+Key consistency point: the orchestrator does NOT read alert content
+to build the act chain. It builds the chain from the presented
+actor_token (Enrich's token). The alert-content-reading happens at
+ENRICH, not the orchestrator. So:
+
+  - Enrich holds the alert-content-driven decision (whether to
+    escalate to containment).
+  - The orchestrator holds the chain-construction decision (nest
+    the requesting agent, Enrich, into the act claim).
+  - The misattribution is COMMITTED at the orchestrator (Boundary 2
+    remains the attack boundary) but TRIGGERED by Enrich's correct
+    escalation.
+
+This keeps Boundary 2's "attack boundary" framing intact: the wrong
+act-claim identity is still committed at the orchestrator's minting
+step. §5 does not relocate the attack boundary; it specifies the
+trigger path that reaches it.
+
+No change to Boundary 2's locked text in threat-model.md is needed.
+This note exists only to make the §2 ↔ §5 link explicit and
+auditable.
