@@ -20,14 +20,14 @@
 - This is the "covering tracks" scenario.
 
 
-Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and issues a request to a triage orchestrator. The orchestrator delegates work to two sibling subagents — Agent-Enrich and Agent-Contain — by minting each a scoped delegation token (RFC 8693 act claim). Both subagents can call one shared tool, query_siem, which records the identity of the calling agent in the action log. Agent-Contain holds higher-consequence permissions than Agent-Enrich; this asymmetry is what makes misattribution between the two security-relevant rather than cosmetic. The system is deliberately the smallest configuration in which sibling impersonation is possible: two siblings (so impersonation has a target) and one shared tool (so the attack has exactly one degree of freedom — A acted, the log says B).
+Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and issues a request to a triage orchestrator. The orchestrator delegates work to two sibling subagents — Agent-Enrich and Agent-Contain — by minting each a scoped delegation token (RFC 8693 act claim). Both subagents can call one shared tool, siem_action, which records the identity of the calling agent in the action log. Agent-Contain holds higher-consequence permissions than Agent-Enrich; this asymmetry is what makes misattribution between the two security-relevant rather than cosmetic. The system is deliberately the smallest configuration in which sibling impersonation is possible: two siblings (so impersonation has a target) and one shared tool (so the attack has exactly one degree of freedom — A acted, the log says B).
 
 **Components:**
 - Human principal — The SOC analyst. Authenticates once (OAuth2/OIDC), originates the task, and is the root of every delegation chain. Holds the superset of  
                     authority; delegates a narrowed slice downward. Does not act on tools directly.
 
 - Orchestrator    — Receives the analyst's request, decomposes it, and mints scoped delegation tokens for the two subagents via token exchange. Each token's
-                    act claim nests back to the analyst. The orchestrator is the delegating authority; it does not call query_siem itself. 
+                    act claim nests back to the analyst. The orchestrator is the delegating authority; it does not call siem_action itself. 
                     
                     ⟨Critical call: is the orchestrator in or out of the attacker's reach? If the attack mechanism is confused-deputy via the orchestrator, the orchestrator is part of the attack surface; if it's token reuse or scope spoofing at the subagent layer, the orchestrator is trusted. This decision is really a §5 decision, but it determines whether you describe the orchestrator as trusted here.⟩
                                                                                 |
@@ -36,10 +36,10 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                     interesting
 
 - Subagent A —      Enrich — the lower-consequence sibling. Job: read-only context gathering (e.g., pull alert metadata, enrich indicators). Scope: 
-                    read-only access to query_siem. In the attack, this is the agent whose identity is falsely stamped on Contain's action — the innocent sibling the attacker hides behind.
+                    read-only access to siem_action. In the attack, this is the agent whose identity is falsely stamped on Contain's action — the innocent sibling the attacker hides behind.
 
 - Subagent B —      the higher-consequence sibling and the true executor in the attack. Job: consequential response actions (e.g., isolate a host, block 
-                    an IP). Scope: write/action access via query_siem. 
+                    an IP). Scope: write/action access via siem_action. 
                     
                     ⟨your call: how much do you separate "decide to contain" from "execute containment"? Keeping it to one tool call keeps your one-degree-of-freedom cleanliness; splitting it is more realistic but muddies measurement. I'd keep it single for v1.⟩
                                                                                 |
@@ -49,7 +49,7 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                   
 - Tool —            siem_action — A single SOAR‑style endpoint that can execute both read‑only queries and write‑capable response actions. The command 
                     parameter determines the operation, and the delegated token’s scope claim determines whether the call is permitted.
-                    ⟨your call: does query_siem do both read and action, with scope deciding what's permitted? Or is it one endpoint with a permission check? 
+                    ⟨your call: does siem_action do both read and action, with scope deciding what's permitted? Or is it one endpoint with a permission check? 
                     Simplest defensible version: one tool, scope-gated.⟩
                                                                                 |
                                                                                 V
@@ -110,17 +110,16 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
                         well-formed and terminates at the analyst principal. Malformed or unrooted chains are rejected.
                       - Scope gate: the token's scope claim is checked against the requested command. A token with siem:read invoking isolate_host is 
                         rejected; a token with siem:write invoking it is permitted.
-                      - Identity resolution (per §1's locked decision): the calling agent's identity is read solely from the verified act claim's 
-                        innermost subject. No self-reported identity field is accepted. This is the identity that will be written to the action log 
+                      - Identity resolution (per §1's locked decision): the calling agent's identity is read solely from the most-recent actor in the delegation chain (the top-level act.sub). No self-reported identity field is accepted. This is the identity that will be written to the action log 
                         as the claimed actor.
 
-                      Verification at this boundary is assumed working and is not where the attack lives. On the adversarial path, the token presented at Boundary 3 was minted at Boundary 2 — it carries a valid signature, current expiry, well-formed chain, scope appropriate to the requested command, and an innermost act subject naming a legitimate sibling. Every check above passes. The tool then writes the claimed actor (read from the verified act claim) to the log, faithfully recording what the token says. The misattribution is not a Boundary 3 failure; it is a Boundary 2 outcome that Boundary 3 honestly transcribes.
+                      Verification at this boundary is assumed working and is not where the attack lives. On the adversarial path, the token presented at Boundary 3 was minted at Boundary 2 — it carries a valid signature, current expiry, well-formed chain, scope appropriate to the requested command, and a current actor (top-level act.sub) naming a legitimate sibling. Every check above passes. The tool then writes the claimed actor (read from the verified act claim) to the log, faithfully recording what the token says. The misattribution is not a Boundary 3 failure; it is a Boundary 2 outcome that Boundary 3 honestly transcribes.
 
                       Why this boundary matters for the result: a reviewer's first reflex on seeing the attack succeed is "the tool must have skipped a check." This boundary exists to foreclose that reading. Every standard check is named and assumed to pass. The attack is not a verification gap at the tool; it is a decisional gap at the orchestrator, faithfully propagated by a correctly-functioning tool.
 
 **Boundary 4 (tool → action log — claimed-actor write)**:
 
-                      After Boundary 3's verification completes and the requested command executes, the tool writes a record to the action log: {claimed_actor, claimed_scope, claimed_principal_chain, command, target, timestamp, token_chain_summary}. The claimed_actor field is the identity resolved at Boundary 3 — i.e., the innermost subject of the verified act claim. The tool does not have access to ground truth (it cannot independently verify which agent process actually originated the call) and so writes what the token says, faithfully.
+                      After Boundary 3's verification completes and the requested command executes, the tool writes a record to the action log: {claimed_actor, claimed_scope, claimed_principal_chain, command, target, timestamp, token_chain_summary}. The claimed_actor field is the identity resolved at Boundary 3 — i.e., the current actor (top-level act.sub) of the verified act claim. The tool does not have access to ground truth (it cannot independently verify which agent process actually originated the call) and so writes what the token says, faithfully.
 
                       Verification at this boundary depends on the active baseline:
 
@@ -160,7 +159,7 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
                       What this boundary does and does not do: Boundary 5 is not a defense and is not part of the system under test. It is the measurement instrument. Its job is to make the AIS metric meaningful by guaranteeing that "claimed attribution" and "true attribution" come from causally independent sources. If this boundary's independence is violated, the benchmark measures nothing.
 
-                      Why this matters explicitly for the result: §9 will face the question "how do you know your ground truth is actually ground truth?" The answer lives here: process boundary, credential isolation, causal precedence. A reviewer who accepts those three properties has to accept the AIS measurement as valid. A reviewer who challenges them is challenging the construction of the experiment, not the result — and the construction is described, defensible, and reproducible.
+                      Why this matters explicitly for the result: §8 will face the question "how do you know your ground truth is actually ground truth?" The answer lives here: process boundary, credential isolation, causal precedence. A reviewer who accepts those three properties has to accept the AIS measurement as valid. A reviewer who challenges them is challenging the construction of the experiment, not the result — and the construction is described, defensible, and reproducible.
                       
 
 **The attack boundary — where sibling impersonation actually occurs:**
@@ -189,7 +188,7 @@ The adversary is modeled at the gray-box knowledge level: they know the kind of 
                       - Compromise the SIEM, upstream sensors, or any other system in the data path before Enrich.
                       - Forge or modify delegation tokens. The authorization server's signing key is out of reach (per §2 Boundary 2's cryptographic verification).
                       - Read or write the ground-truth recorder. The harness process and its credentials are out of reach (per §2 Boundary 5's three independence axes).
-                      - Tamper with the action log after it is written. (Out of scope for v1 — see backlog in §8.)
+                      - Tamper with the action log after it is written. (Out of scope for v1 — see backlog in §7.)
                       - Compromise the orchestrator, either subagent, or the tool as processes. The attacker influences these components only by controlling the data they consume; they do not execute code inside them.
 
 **What the adversary KNOWS:**
@@ -233,7 +232,7 @@ This knowledge profile matches an attacker who has read public documentation abo
 
 ## 4. What "true attribution" means (the ground-truth definition)
 
-This section defines ground truth and the AIS metric formally. Everything downstream — the scorer implementation, the results section, the validity argument in §9 — depends on these definitions being precise.
+This section defines ground truth and the AIS metric formally. Everything downstream — the scorer implementation, the results section, the validity argument in §8 — depends on these definitions being precise.
 
 **Ground-truth schema.**
 
@@ -290,7 +289,7 @@ The Attribution Integrity Score for a baseline configuration B is then:
 
                     - Defect breakdown. 
                       1.  For each adversarial action where is_correct = 0, record which of the three fields mismatched. Reporting the distribution of defect types across a baseline
-                      shows whether the attack breaks attribution uniformly across all three fields or concentrates on one. This is the diagnostic signal for §8 (defenses) — it tells you which field a given defense layer actually protects.
+                      shows whether the attack breaks attribution uniformly across all three fields or concentrates on one. This is the diagnostic signal for §6 (defense baselines) — it tells you which field a given defense layer actually protects.
                       
                       2.  Hold rate at each defense layer. For each baseline transition (1→2, 2→3, 3→4), report the marginal improvement in AIS. This isolates the contribution of each defense layer to the curve and is what the writeup will reference when claiming "Baseline 3 closes most of the gap" or "Baseline 4 closes very little."
 
@@ -308,9 +307,9 @@ The Attribution Integrity Score for a baseline configuration B is then:
 
                       - The specific attack mechanism that causes adversarial
                         actions to occur — that is §5.
-                      - The defense layers that each baseline applies — that is §8.
+                      - The defense layers that each baseline applies — that is §6.
                       - The validity of the ground-truth recorder itself — that was
-                        argued in §2 Boundary 5 and will be defended in §9.
+                        argued in §2 Boundary 5 and will be defended in §8.
 
 ---
 
@@ -396,11 +395,11 @@ The attack works because the delegation chain answers "who requested" while the 
                         An action is adversarial if it is a containment action executed via the Enrich → re-delegation path triggered by attacker-shaped alert content. Per §4, only these actions are counted in the AIS denominator. (Note: this same misattribution can occur in normal operation whenever containment is re-delegated through Enrich — see the framing note below — but the benchmark scopes its denominator to attacker-triggered instances for a clean, attributable measurement.)
 
 **Framing note — latent gap vs. adversarial trigger.**
-                        The misattribution described here is, strictly, a latent property of the re-delegation pattern: it would occur whenever a containment action is re-delegated through Enrich, attack or no attack. The adversarial framing is that an attacker can deliberately and repeatedly trigger this latent gap by shaping alert content, turning a silent attribution weakness into a controllable "covering tracks" capability. v1 measures the adversarially-triggered case. The observation that the gap also exists in normal operation strengthens the finding (the vulnerability is structural, not merely adversarial) and is developed in §9.
+                        The misattribution described here is, strictly, a latent property of the re-delegation pattern: it would occur whenever a containment action is re-delegated through Enrich, attack or no attack. The adversarial framing is that an attacker can deliberately and repeatedly trigger this latent gap by shaping alert content, turning a silent attribution weakness into a controllable "covering tracks" capability. v1 measures the adversarially-triggered case. The observation that the gap also exists in normal operation strengthens the finding (the vulnerability is structural, not merely adversarial) and is developed in §8.
 
 **Out of scope for v1 (named so it can't be called missing).**
 
-                        Direct prompt injection (embedding explicit instructions in alert text). This is an alternative mechanism that fits the gray-box profile, but it conflates the delegation-layer measurement with LLM instruction-following robustness, introducing model-specific confounds. Field-structure-triggered re-delegation isolates the delegation layer from the model's behavior. Direct prompt injection is named as future work in §9.
+                        Direct prompt injection (embedding explicit instructions in alert text). This is an alternative mechanism that fits the gray-box profile, but it conflates the delegation-layer measurement with LLM instruction-following robustness, introducing model-specific confounds. Field-structure-triggered re-delegation isolates the delegation layer from the model's behavior. Direct prompt injection is named as future work in §8.
 
                         Inducing Enrich into an incorrect decision. The v1 attack deliberately relies on Enrich behaving correctly, so the result is independent of Enrich's robustness. Attacks that manipulate Enrich's judgment are a distinct mechanism and are out of scope.
 
@@ -458,30 +457,97 @@ For each baseline, two things are stated: what signal the tool uses to determine
 
 **The predicted curve.**
 
-| Baseline | Configuration          | Signal read                           | Tracks executor? | Predicted AIS |
-|----------|------------------------|---------------------------------------|------------------|---------------|
-| 1        | Shared account         | shared identity                       | undefined        | ≈ 0.0         |
-| 2        | Per-agent identity     | execution-time authenticator          | yes              | ≈ 1.0         |
-| 3        | + RFC 8693 act claims  | delegation current actor (requester)  | no               | ≈ 0.0         |
-| 4        | + tamper-evident log   | delegation current actor (requester)  | no               | ≈ 0.0         |
+                        | Baseline | Configuration          | Signal read                           | Tracks executor? | Predicted AIS |
+                        |----------|------------------------|---------------------------------------|------------------|---------------|
+                        | 1        | Shared account         | shared identity                       | undefined        | ≈ 0.0         |
+                        | 2        | Per-agent identity     | execution-time authenticator          | yes              | ≈ 1.0         |
+                        | 3        | + RFC 8693 act claims  | delegation current actor (requester)  | no               | ≈ 0.0         |
+                        | 4        | + tamper-evident log   | delegation current actor (requester)  | no               | ≈ 0.0         |
 
 
-The curve is non-monotonic: it rises from Baseline 1 to Baseline 2, then falls at Baseline 3 and stays low at Baseline 4. The headline finding is the drop at Baseline 3 — the two primitives most emphasized for agent non-repudiation (signed delegation chains and tamper-evident logs) do not close the multi-agent attribution gap, and signed delegation actively opens it relative to simple per-agent identity, by following RFC 8693 §4.1 correctly.
+                        The curve is non-monotonic: it rises from Baseline 1 to Baseline 2, then falls at Baseline 3 and stays low at Baseline 4. The headline finding is the drop at Baseline 3 — the two primitives most emphasized for agent non-repudiation (signed delegation chains and tamper-evident logs) do not close the multi-agent attribution gap, and signed delegation actively opens it relative to simple per-agent identity, by following RFC 8693 §4.1 correctly.
 
 **Hypotheses, not results.**
 
-These AIS values are pre-registered hypotheses, stated before implementation, to be confirmed or refuted by measurement. If the measured curve differs — for example, if Baseline 3 does not fully collapse, or if Baseline 2 does not reach 1.0 — the discrepancy is itself a finding to investigate, and the threat model commits to reporting it. The defect-breakdown metric (§4) will show which of the three attribution fields (actor, scope, principal_chain) each baseline gets right or wrong. Note that for this attack the actor and principal_chain defects are expected to be correlated (both flag when Enrich occupies the current-actor position); this correlation is a true property of the attack, not a metric artifact, and is reported as such.
+                        These AIS values are pre-registered hypotheses, stated before implementation, to be confirmed or refuted by measurement. If the measured curve differs — for example, if Baseline 3 does not fully collapse, or if Baseline 2 does not reach 1.0 — the discrepancy is itself a finding to investigate, and the threat model commits to reporting it. The defect-breakdown metric (§4) will show which of the three attribution fields (actor, scope, principal_chain) each baseline gets right or wrong. Note that for this attack the actor and principal_chain defects are expected to be correlated (both flag when Enrich occupies the current-actor position); this correlation is a true property of the attack, not a metric artifact, and is reported as such.
 
 ---
 
 ## 7. Scope Discipline
 
+This benchmark measures one attribution failure mode, rigorously, rather than surveying many shallowly. This section states precisely what is in scope for v1 and what is deliberately excluded, so that the contribution is not mistaken for either more or less than it is.
+
+**In scope (v1).**
+
+                        A single failure mode: sibling misattribution via re-delegation (the Path B mechanism specified in §5). Concretely, the benchmark measures whether the attribution triple {actor, scope, principal_chain} recorded for a containment action matches the true executor, when that action reaches the tool through the Enrich → re-delegation path, across the four defense baselines of §6. This one mode is measured end-to-end: real RFC 8693 token exchange, real per-baseline defenses, an independent ground-truth recorder (§2 Boundary 5), and the AIS metric (§4) with pre-registered hypotheses.
+
+**Explicitly out of scope (named so the omissions are deliberate, not gaps).**
+                        The following are not measured in v1. Each is a legitimate attribution concern; each is excluded for a stated reason, and most are candidates for v2.
+
+**Direct prompt injection (embedding explicit instructions in alert text).**
+                        Excluded because it conflates the delegation-layer measurement with LLM instruction-following robustness, introducing model-specific confounds (§5). The v1 mechanism deliberately isolates the delegation layer from model behavior. Named as future work in §8.
+
+**Inducing Enrich into an incorrect decision.**
+                        Excluded because the v1 attack relies on Enrich behaving correctly, so the result is independent of Enrich's robustness (§5). Attacks on Enrich's judgment are a distinct mechanism.
+
+**Delegation forgery / token replay.**
+                        The adversary cannot forge or replay tokens in v1 (the signing key is out of reach, per §3). A weaker key-management model is a separate threat.
+
+**Scope-attenuation bypass.**
+                        Whether an agent can exceed its granted scope is a separate question from whether the correct agent is attributed; v1 holds scope enforcement sound (§2 Boundary 3) and measures attribution only.
+
+**Audit-log tampering.**
+                        The adversary cannot tamper with the log in v1 (§3); Baseline 4 measures whether tamper-evidence helps, but post-hoc log rewriting by a log-capable adversary is out of scope.
+
+**Principal laundering (obscuring the human principal at the root of the chain).**
+                        v1 holds the principal (analyst) correctly rooted and attacks the actor position only.
+
+**may_act enforcement (RFC 8693 §4.4).**
+                        The may_act claim governs authorization to act, not attribution. Since Contain is legitimately authorized in the v1 scenario, may_act does not prevent the attack; whether it offers defense-in-depth value is noted for future work, not measured here.
+
+**Why one mode, measured well, beats five gestured at.**
+                        A benchmark's value is in the trustworthiness of its measurement, not the breadth of its coverage. Measuring one failure mode end-to-end — with an independent ground-truth recorder, spec-compliant token exchange, four real defense baselines, and pre-registered hypotheses — produces a result a reviewer can verify and a practitioner can act on. Surveying five modes shallowly would multiply the surface area for "but did you really measure that correctly?" objections without deepening any single answer. The contribution is a defensible measurement of whether RFC 8693 delegation preserves attribution under sibling impersonation; that claim is strongest when the one mode behind it is airtight. The out-of-scope list above is the v2 roadmap, not a set of excuses.
 
 
 ---
 
 ## 8. Validity threats (pre-empt the reviewer)
 
+A benchmark's value rests on whether its measurement can be trusted. This section lists the ways the result could be wrong or unconvincing, and states the mitigation for each. The first is a genuine limitation that v1 does not fully resolve; it is conceded rather than defeated. The remainder are threats the construction addresses.
+                        1. "You measured one system. Does this generalize?" (The central limitation — conceded.)
 
+                            This is the deepest objection, and it is partly correct. The non-monotonic AIS curve is demonstrated on one minimal SOC pipeline with one orchestrator design and one re-delegation topology. v1 establishes that the attribution gap exists, is triggerable by a realistic gray-box adversary, and survives the two defenses standards bodies emphasize — in this system. It does not prove the gap holds across all RFC 8693 deployments or all multi-agent delegation topologies. That is a real gap between "shown in one instance" and "true in general," and v1 does not close it.
+
+                            What makes the result meaningful despite n=1 is why the gap appears. The misattribution is not a quirk of this topology; it follows from RFC 8693 §4.1, which mandates (MUST) that a token consumer attribute to the current actor and forbids using prior actors for access decisions, combined with the standard's implicit assumption (§A.2.3, §A.2.5) that the current actor and the executor are the same entity. That assumption is topology-independent. Wherever a multi-agent system separates the requester of a delegated capability from its executor, the gap should appear — because the standard provides no field to record the executor when it differs from the requester. v1 measures one instance; the mechanism behind it is structural, which makes generalization likely but unproven. Establishing the gap's prevalence across real delegation architectures is the primary item of future work.
+                            
+                            This concession is stated first, and deliberately, because a reviewer will reach for it first; meeting it head-on is more credible than burying it.
+                            
+                        2. "The attack only works because your system is a toy."
+
+                            The system is minimal by design (§1), but minimality is not the same as unrealism. Every structural element maps to a documented real-world pattern: alert-content-as-injection-vector (Cline 2026, Log4Shell, Splunk XSS, ELK injection; §2 Boundary 1), data-driven SOAR routing (§5), and RFC 8693 delegation as the non-repudiation primitive NIST/NCCoE explicitly recommends (Feb 2026). The architecture is the smallest system in which sibling impersonation is possible, not an unrepresentative one — it isolates the one degree of freedom (requester ≠ executor) without confounds. A larger system would add realism but also add confounds that obscure the measurement; v1 trades breadth for a clean causal claim.
+
+                        3. "Ground truth isn't really independent of the log."
+                            
+                            If the ground-truth recorder could be influenced by the same adversarial input that corrupts the log, the AIS measurement would be circular. §2 Boundary 5 establishes independence by construction along three axes: process boundary (the recorder runs in the harness, outside the agent processes the attacker influences), credential isolation (no in-system component holds ground-truth write credentials), and causal precedence (ground truth is recorded before the tool's verification logic runs). The attacker's only capability (alert-content control, per §3) cannot cross any of these. A reviewer who accepts the three axes must accept the measurement; one who challenges them is challenging a described, reproducible construction, not an unstated assumption. Honest sub-limitation: this independence is established by construction and argument, not by formal verification. v1 asserts it; it does not machine-check it.
+                            
+                        4. "The baselines aren't a fair comparison."
+                            
+                            The four baselines are config flags over a single codebase (§6), not four separately-engineered systems, so differences in AIS cannot be attributed to incidental implementation quality. Each baseline adds exactly one layer to the previous, isolating that layer's marginal effect. The most attackable point — Baseline 2 reaching ≈ 1.0 — rests on a stated, defensible model (attribution binds to the execution-time authenticator, which is the executor; §6), with the authorization-vs-attribution distinction made explicit so the 1.0 is not an artifact.
+                            
+                        5. "This is just a logic bug a careful engineer would fix."
+
+                            This is the objection §6's central result is built to defeat, and the defeat is spec-grounded rather than asserted. RFC 8693 §4.1 mandates attributing to the current actor and forbids using prior actors for access-control decisions. A spec-compliant implementation cannot "read a different field," because every field the standard defines names the requester (act.sub), the principal (sub), or prior actors that §4.1 forbids using for the decision. The misattribution arises from following the standard correctly, not from violating it. It is a property of the standard's semantics in the multi-agent case, not an implementation defect.
+                            
+                        6. "The agents' decisions are scripted, not real LLM behavior."
+                            
+                            In v1, the attack is deliberately designed to be independent of the agent's reasoning quality: Enrich's escalation decision is the correct response to a genuinely containment-warranting alert (§5, Reading 2), so the result holds whether the agent is a scripted policy or a frontier model. This is a strength, not a gap — it removes model-specific confounds. But it also means v1 does not measure how the gap interacts with imperfect agent decisions (a manipulated Enrich), which is named out of scope (§7) and left to future work.
+                            
+                        7. "Why gray-box and not white-box?"
+                            
+                            The gray-box knowledge level (§3) matches every real-world precedent cited (§2) and avoids the Kerckhoffs category error: RFC 8693 runtime prompts are not cryptographic schemes, so white-box exposure of the orchestrator's prompt would collapse the attack into prompt engineering against a known target, conflating the delegation-layer measurement with model robustness. Gray-box is the level at which the attack is both realistic and reproducible.
+                            
+**The discipline that protects all of the above.**
+
+Every AIS value in §6 is a pre-registered hypothesis, stated in this threat model before any attack code is written. If measurement contradicts a prediction — Baseline 3 not fully collapsing, Baseline 2 not reaching 1.0 — the discrepancy is reported as a finding, not quietly reconciled. This is the structural difference between a benchmark and a demo: the predictions are committed in advance, so the result means something whether or not it confirms the hypothesis.
 
 ---

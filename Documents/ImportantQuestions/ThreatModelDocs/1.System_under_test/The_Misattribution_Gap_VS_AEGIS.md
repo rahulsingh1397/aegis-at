@@ -32,7 +32,8 @@ text
 │     └─────────────────────┘        └──────────────────────────┘ │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
-🧠 SND: The Model‑Layer Attack (Memory Poisoning)
+**SND: The Model‑Layer Attack (Memory Poisoning)**
+
 text
   Attacker poisons vector store ──► poisoned document retrieved
                                          │
@@ -45,9 +46,11 @@ text
                                          ▼
   Model acts on attacker's instructions ──► attributes its own action to 
                                              legitimate policy interpretation
+
+
 What SND proved: The model believes it's doing the right thing, and the auditing layer (safety classifiers) validates that belief. The attack is invisible because it operates at the level of what the model thinks it's doing.
 
-🔗 AEGIS‑AT: The Delegation‑Layer Attack (Sibling Impersonation)
+**AEGIS‑AT: The Delegation‑Layer Attack (Sibling Impersonation)**
 text
   Attacker injects prompt into Enrich (benign subagent)
                    │
@@ -65,14 +68,13 @@ text
   Attribution Integrity Score (AIS) drops to 0.0  ❌ (blame is corrupted)
 What AEGIS‑AT measures: The system knows something happened (unlike SND, where it doesn't even detect the violation), but it blames the wrong agent. The attack survives because the delegation chain—the very mechanism meant to provide non‑repudiation—is the attack vector.
 
-🔄 The Complementarity (Why Both Must Be Measured)
-Layer	Attack	Fails Because
-Model (Belief)	SND / Memory Poisoning	The model cannot detect that its own reasoning is corrupted by poisoned context. Safety classifiers look for model misalignment, not memory‑layer attacks.
-Delegation (Blame)	AEGIS‑AT / Sibling Impersonation	The delegation chain cannot guarantee that the act claim in a signed token matches the agent that actually performed the action. The audit log becomes untrustworthy evidence.
-The combined implication: An attacker can (1) poison memory so the model believes it should take a malicious action, and (2) exploit the delegation layer so that action is blamed on a different agent. The system not only does the wrong thing—it accuses the wrong entity of doing it. This is a forensic nightmare that neither layer alone can fix.
+ The Complementarity (Why Both Must Be Measured)
 
-🧭 How to Use This Visualization in Your Paper
-In your threat model (§5), you can place these two attacks side‑by‑side to show that your benchmark complements SND, not competes with it. SND closed the model‑layer trust gap; AEGIS‑AT closes the delegation‑layer trust gap. Together, they demonstrate that current multi‑agent security assumptions fail at both the belief and the blame layer.
+ **Layer	Attack	Fails Because**
 
-This framing makes your work immediately citable by anyone working on agent auditing, NIST compliance, or SOC forensic integrity. It positions AEGIS‑AT not as a standalone tool, but as the missing half of a complete adversarial evaluation suite for multi‑agent systems.
+* Model (Belief)	SND / Memory Poisoning	The model cannot detect that its own reasoning is corrupted by poisoned context. Safety classifiers look for model misalignment, not memory‑layer attacks.
+* Delegation (Blame)	AEGIS‑AT / Sibling Impersonation	The delegation chain cannot guarantee that the act claim in a signed token matches the agent that actually performed the action. The audit log becomes untrustworthy evidence.
+* The combined implication: An attacker can (1) poison memory so the model believes it should take a malicious action, and (2) exploit the delegation layer so that action is blamed on a different agent. The system not only does the wrong thing—it accuses the wrong entity of doing it. This is a forensic nightmare that neither layer alone can fix.
+
+
 
