@@ -70,13 +70,17 @@ matching the harness's adversarial-action triples enter the pairing
 check at all. Non-adversarial calls (calibration, setup) are skipped
 in both directions.
 
-### Adversarial-action filter: harness-supplied triple list
+### Adversarial-action filter: harness-supplied frozenset of triples
 
 The harness, not the recorder or the tool, knows which actions are
 adversarial — because the harness is the entity that constructs the
-attacker-shaped alerts. It passes a list of
+attacker-shaped alerts. It passes a `frozenset` of
 `(command, target, timestamp)` triples to the scorer, identifying the
 adversarial set.
+
+Why `frozenset`: immutable, hashable, O(1) membership check — the
+membership test runs once per record in each log, so set semantics
+matter at larger N.
 
 Rejected alternatives:
 - **Adversarial flag in the record.** Would require either the
@@ -87,13 +91,20 @@ Rejected alternatives:
   measurement.
 - **Action IDs.** Adds a field the records don't currently have; the
   triple already serves as a unique key.
+- **`list` or `set` (mutable).** No reason to allow the filter to be
+  mutated mid-call; frozenset signals "this is the locked adversarial
+  set for this scoring run."
 
-### Result object: structured, with defect breakdown and Wilson CI
+### Result object: dict with TypedDict annotations
 
-The scorer returns a dataclass or dict with:
+The scorer returns a plain dict, matching the convention of every
+other record schema in the codebase (action-log records from
+`siem_action`, ground-truth records from the recorder). TypedDict
+annotations provide static type hints without changing runtime
+structure.
 
 ```
-ScorerResult:
+ScorerResult (TypedDict):
   ais: float                      # the point estimate
   numerator: int                  # paired-and-matching count
   denominator: int                # |A(B)|
@@ -102,9 +113,9 @@ ScorerResult:
   defects: list[Defect]           # one entry per defect, with breakdown
 ```
 
-Each `Defect` carries the triple, the defect shape (fields mismatched,
-or which side was missing), and the two records (or None) for forensic
-inspection.
+Each `Defect` (also a TypedDict) carries the triple, the defect shape
+(fields mismatched, or which side was missing), and the two records
+(or None) for forensic inspection.
 
 Per §4: "Reporting the distribution of defect types across a baseline
 shows whether the attack breaks attribution uniformly across all three
@@ -112,26 +123,37 @@ fields or concentrates on one. This is the diagnostic signal for §6."
 The defect list is what enables that report.
 
 Rejected alternatives:
+- **Dataclasses.** Cleaner call-site syntax (`result.ais`) but breaks
+  the existing record-schema convention. Rule 11 (match the codebase's
+  conventions) wins.
 - **Just the float.** Loses the defect breakdown §4 requires.
-- **Float + defects tuple.** Same content, less discoverable. The
-  structured object reads better at call sites.
+- **Float + defects tuple.** Same content, less discoverable.
 
 ---
 
-## Wilson confidence interval
+## Wilson confidence interval — inline implementation
 
 §4 specifies Wilson interval at 95%, not Wald or Clopper-Pearson.
-The Wilson interval is well-defined for `n = 0` (returns the trivial
-[0, 1] bounds) and gives sensible bounds at the edges (AIS = 0 or 1).
+Implement inline (~10 lines, closed form). No new dependency.
 
-Implementation choice: use `statsmodels.stats.proportion.proportion_confint`
-with `method='wilson'`. If the dependency is undesirable, the formula
-is short enough to inline. Decision: start with `statsmodels` (already
-ergonomic), inline only if dependency footprint becomes an issue.
+The Wilson interval at confidence level 1−α for k successes in n trials:
 
-INV-8 commits: verify the implementation produces the documented bounds
-for two known cases (e.g., `n=100, k=95` → roughly `[0.886, 0.978]`)
-before locking.
+```
+center = (k + z²/2) / (n + z²)
+spread = z * sqrt(k*(n-k)/n + z²/4) / (n + z²)
+ci_low  = center - spread
+ci_high = center + spread
+```
+
+…where `z = 1.96` for 95% confidence. Handles `n = 0` by returning
+[0.0, 1.0] (the trivial bounds).
+
+INV-8 anchor: verify against `n=100, k=95 → roughly [0.886, 0.978]`
+in a test before locking. If the test passes the formula is correct;
+if it doesn't, the implementation is wrong, not the spec.
+
+Rejected: `statsmodels.stats.proportion.proportion_confint`. Adds a
+~50MB dependency for one closed-form function. Over-fetching.
 
 ---
 
@@ -201,7 +223,7 @@ field, which it doesn't.
   (returned values from wrapped `siem_action` calls) and the
   ground-truth log (the list the recorder appends to).
 - The harness tracks which actions are adversarial (the triples it
-  injected via attacker-shaped alerts).
+  injected via attacker-shaped alerts) as a `frozenset`.
 - The harness calls `score_ais(claimed_log, gt_log, adversarial_triples)`
   once per baseline, stores results, and produces the curve.
 
@@ -209,14 +231,17 @@ field, which it doesn't.
 
 - Tests construct synthetic claimed/ground-truth log pairs covering
   each defect shape and the matching case.
-- One test per defect shape (4 total).
-- One test for the symmetric handling (both unpaired directions
-  produce defects).
+- One test per defect shape (4 total: match + 3 defect types).
+- One test for symmetric handling (both unpaired directions produce
+  defects, with the right shape).
 - One test for the adversarial filter (non-adversarial calls don't
   enter the denominator).
-- One test for the Wilson CI (known case verification, INV-8).
+- One test for the Wilson CI (known case verification, INV-8 anchor).
 - One test for the empty-set case (`n = 0` returns valid result, not
   a divide-by-zero).
+- One test for the timestamp-equality property (claimed and true
+  records that came from the same closure carry the same float;
+  this is the load-bearing pairing test).
 
 ### For the §6 baseline sweep
 
@@ -230,19 +255,35 @@ field, which it doesn't.
 
 ## Open questions deferred
 
-- **Floating-point timestamp equality for pairing.** If timestamps
-  are passed through `time.time()` and propagated by closure, they
-  should be bit-identical between claimed and true records. But if
-  any layer ever rounds or serializes, equality could fail. Decision
-  for v1: use `==` and add a test that catches the issue if it
-  appears. If it ever does, switch to small-epsilon equality with
-  a noted limitation.
+These are decisions we deliberately did NOT make in v1, along with
+the trigger conditions for revisiting them. Naming them here prevents
+re-litigation during the build and tells a reviewer which cases were
+considered and bounded.
+
+- **Floating-point timestamp equality for pairing.** The recorder's
+  closure pattern pins `ts` once and both records carry the same
+  Python float object, so `==` is exact in v1. The pairing test
+  verifies this property explicitly — both records carry the same
+  float value (and, where Python's float identity holds, the same
+  object). If a future serialization layer (JSON, database) breaks
+  this property, the test fails loud rather than the scorer silently
+  mispairing. **Trigger to revisit:** test fails for precision-loss
+  reasons → switch to small-epsilon equality (`abs(t1 - t2) < 1e-9`)
+  with the limitation documented.
+
 - **Should the scorer log its own findings to a file?** v1 returns
   the result object only; the harness owns persistence (same pattern
-  as the tool).
+  as the tool). Mixing computation and persistence in the scorer
+  would couple it to a file-format decision and force cleanup
+  fixtures in every test. **Trigger to revisit:** if multiple harness
+  consumers reinvent the same persistence layer, then a
+  `scorer.write_report(result, path)` helper might be worth adding.
+
 - **Multi-baseline aggregation.** §6's curve compares four baselines.
-  Aggregation lives in the harness/sweep code, not the scorer. The
-  scorer is per-baseline.
+  The scorer is per-baseline by design; aggregation across baselines
+  (marginal improvement, comparative plotting, the §6 table)
+  lives in the harness/sweep code, not here. **Trigger to revisit:**
+  none — this separation is deliberate and should hold.
 
 ---
 
@@ -254,6 +295,8 @@ field, which it doesn't.
   produces measured values to compare against.
 - **CLAUDE.md INV-7** — pre-registered predictions; the scorer
   enforces §4 honestly so contradictions surface.
+- **CLAUDE.md Rule 11** — match the codebase's conventions; dict
+  result follows existing record-schema pattern.
 - **recorder_notes.md** — shared-clock design that enables the
   triple-pairing key.
 - **tools_notes.md** — Boundary-4 record schema this module consumes.
