@@ -13,6 +13,9 @@ RFC 8693 (OAuth 2.0 Token Exchange) represents delegation with the `act` claim
     - `act`  = who is ACTING on that principal's behalf, and `act` can NEST,
                forming a verifiable chain back to the original human.
 
+# RFC 8693 §4.1 governs the `act` claim (outermost = current actor; nested =
+# prior actors, informational only). §A.2.5 shows the delegation token shape.
+
 So a token where Subagent A acts on behalf of the human principal looks like:
 
     {
@@ -73,7 +76,9 @@ def mint_initial_token(principal: str, scope: str) -> str:
     return jwt.encode(claims, PRIVATE_PEM, algorithm="RS256")
 
 
-def exchange_token(current_token: str, new_actor: str, narrowed_scope: str | None = None) -> str:
+def exchange_token(
+    current_token: str, new_actor: str, narrowed_scope: str | None = None
+) -> str:
     """RFC 8693 token exchange: take an existing token and produce one where
     `new_actor` is now acting on behalf of whoever the current token represents.
 
@@ -85,9 +90,7 @@ def exchange_token(current_token: str, new_actor: str, narrowed_scope: str | Non
     prior = verify_token(current_token)  # must be valid to delegate from it
 
     # Build the nested actor chain: the new act wraps the prior actor context.
-    prior_act = {"sub": prior["sub"]}
-    if "act" in prior:
-        prior_act["act"] = prior["act"]
+    prior_inner_act = prior.get("act")  # the nested act from the prior token, if any
 
     # Scope narrowing rule: never widen. If a narrowed scope is requested it must
     # be a subset of what the current token already carries.
@@ -104,8 +107,12 @@ def exchange_token(current_token: str, new_actor: str, narrowed_scope: str | Non
 
     now = dt.datetime.now(dt.timezone.utc)
     claims = {
-        "sub": prior["sub"],           # authority still traces to the same principal
-        "act": {"sub": new_actor, "act": prior_act["act"]} if "act" in prior_act else {"sub": new_actor},
+        "sub": prior["sub"],  # authority still traces to the same principal
+        "act": (
+            {"sub": new_actor, "act": prior_inner_act}
+            if prior_inner_act
+            else {"sub": new_actor}
+        ),
         "scope": effective_scope,
         "iat": now,
         "exp": now + dt.timedelta(minutes=10),
@@ -119,15 +126,19 @@ def verify_token(token: str) -> dict:
 
 
 def actor_chain(claims: dict) -> list[str]:
-    """Walk the nested `act` claim and return the delegation path, innermost first.
-    This is what your AIS scorer compares against ground truth's principal_chain."""
+    """Return the delegation path with the CURRENT ACTOR FIRST and the ROOT
+    PRINCIPAL LAST. The current actor is the outermost `act.sub` (RFC 8693
+    §4.1); identity resolution reads chain[0].
+
+    e.g. ['agent:A' (current), 'agent:orchestrator' (prior), 'human:rahul' (root)]
+    """
     chain = []
     node = claims.get("act")
     while node:
         chain.append(node["sub"])
         node = node.get("act")
     chain.append(claims["sub"])  # the root principal sits at the end
-    return chain  # e.g. ['agent:A', 'agent:orchestrator', 'human:rahul']
+    return chain
 
 
 # ---------------------------------------------------------------------------

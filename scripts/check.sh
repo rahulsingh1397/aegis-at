@@ -8,6 +8,13 @@
 # This script is intentionally noisy on failure (Rule 12: fail loud).
 
 set -uo pipefail
+# Auto-activate venv if one exists (so ruff/black/pytest are found).
+# Windows Git Bash uses Scripts/; Linux/macOS uses bin/.
+if [ -f aegis-at/venv/Scripts/activate ]; then
+  source aegis-at/venv/Scripts/activate
+elif [ -f aegis-at/venv/bin/activate ]; then
+  source aegis-at/venv/bin/activate
+fi
 
 # Scope greps to source only. Adjust if layout changes.
 SRC_DIR="aegis-at"

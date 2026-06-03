@@ -48,7 +48,7 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                   - splitting can be done in future iterations
                   
 - Tool —            siem_action — A single SOAR‑style endpoint that can execute both read‑only queries and write‑capable response actions. The command 
-                    parameter determines the operation, and the delegated token’s scope claim determines whether the call is permitted.
+                    parameter determines the operation, and the delegated token's scope claim determines whether the call is permitted.
                     ⟨your call: does siem_action do both read and action, with scope deciding what's permitted? Or is it one endpoint with a permission check? 
                     Simplest defensible version: one tool, scope-gated.⟩
                                                                                 |
@@ -60,9 +60,9 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                       The tool must extract the agent identity solely from the verified act claim in the delegation token. It must not accept a self‑reported identity. This is the only design that:
 
                       Anchors the attack in the orchestrator, preserving the confused‑deputy vector I deliberately chose.
-                      Maps directly to real‑world delegated token systems (RFC 8693, SPIFFE/SPIRE, HAID) where cryptographic attestation is the identity.
+                      Maps directly to real‑world delegated token systems (RFC 8693, SPIFFE/SPIRE, HAID) where cryptographic attestation is the identity.
 
-                      A curve showing how well attribution survives when the orchestrator is under attack — rather than a single “we forgot to check” finding that a reviewer dismisses as a bug.
+                      A curve showing how well attribution survives when the orchestrator is under attack — rather than a single "we forgot to check" finding that a reviewer dismisses as a bug.
                                                             
                 
  
@@ -95,9 +95,11 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
                       Decisional verification (the slack):
 
-                       The orchestrator's logic — which subagent to mint for, which act claim subject to embed, which scope to attach — is influenced by the contents of Enrich's output, which is derived from the untrusted alert (per Boundary 1). In a realistic SOC, the orchestrator routinely mints tokens for both agents based on the same alert's fields, and its routing logic can be confused into embedding the wrong identity. The cryptography is sound; the decision the cryptography commits to is corrupted.
+                       The orchestrator is an RFC 8693 token-exchange endpoint: it receives a token-exchange request from a subagent (with subject_token, actor_token, requested scope, and audience), validates it per RFC 8693 §2.1, and mints the new token per §4.1 / Appendix A.2.5. The orchestrator does NOT make routing decisions based on alert content; the requesting subagent specifies the exchange parameters. This separation is load-bearing for the §5 finding: the misattribution must be a property of the standard, not of orchestrator routing logic.
 
-                       The attacker cannot forge a token, but they can manipulate the orchestrator into honestly issuing a token that names the wrong sibling as the actor. This is the attack boundary. Boundaries 1, 3, 4, and 5 are described so the reviewer can see they are verified properly and are not where the attack lives. Boundary 2 is where verified-but-influenceable logic decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable decision" is the gap the benchmark measures.
+                       The attacker influence at this boundary is therefore upstream — the attacker shapes the alert; the alert shapes Enrich's output; Enrich's output shapes the exchange request Enrich submits. The orchestrator validates and mints without inspecting alert content.
+
+                       The attacker cannot forge a token, but they can manipulate Enrich (via alert content) into submitting an exchange request that the orchestrator will honestly honor — yielding a token that names the wrong sibling as the actor. This is the attack boundary. Boundaries 1, 3, 4, and 5 are described so the reviewer can see they are verified properly and are not where the attack lives. Boundary 2 is where verified-but-influenceable upstream input decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable upstream request" is the gap the benchmark measures.
 
 **Boundary 3 (subagent → tool — token presentation and verification)**:
 
@@ -168,7 +170,7 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
                       
                       All impersonation must therefore route through a token minted with the wrong act claim at Boundary 2. That is the attack boundary — the only point in the system where an adversarial input can cause one sibling's identity to be attached to the other sibling's action. Boundaries 1, 3, 4, and 5 are described so the reviewer can see they are verified properly and are not where the attack lives. 
                       
-                      Boundary 2 is where verified-but-influenceable logic decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable decision" is the gap the benchmark measures.
+                      Boundary 2 is where verified-but-influenceable upstream input decides identity-bearing tokens, and the slack between "verified mechanism" and "influenceable upstream request" is the gap the benchmark measures.
 
 ---
 
@@ -324,7 +326,7 @@ This section specifies the single attack mechanism in scope for v1: delegation-c
 
 **Normal operation (no attack).**
 
-                      Agents act on parsed alert content to decide when a response is warranted, as real SOAR pipelines do (severity, asset criticality, alert type, and affected-host classification routinely drive whether an automated response fires). Enrich makes this escalation decision; the orchestrator's role is to validate the resulting re-delegation request and mint the appropriately-scoped, correctly-nested token. The orchestrator does not read alert content to construct the act chain — it builds the chain from the presented actor_token (per §2 Boundary 2). 
+                      Agents act on parsed alert content to decide when a response is warranted, as real SOAR pipelines do (severity, asset criticality, alert type, and affected-host classification routinely drive whether an automated response fires). Enrich makes this escalation decision and submits the corresponding RFC 8693 token-exchange request to the orchestrator, specifying its own token as the actor_token and the required scope. The orchestrator's role is to validate that request per §2.1 and mint the appropriately-scoped, correctly-nested token per §4.1 / A.2.5 — without inspecting alert content. The orchestrator does not read alert content to construct the act chain — it builds the chain from the presented actor_token (per §2 Boundary 2). 
                       
                       A typical flow:
 
@@ -514,6 +516,7 @@ This benchmark measures one attribution failure mode, rigorously, rather than su
 ## 8. Validity threats (pre-empt the reviewer)
 
 A benchmark's value rests on whether its measurement can be trusted. This section lists the ways the result could be wrong or unconvincing, and states the mitigation for each. The first is a genuine limitation that v1 does not fully resolve; it is conceded rather than defeated. The remainder are threats the construction addresses.
+
                         1. "You measured one system. Does this generalize?" (The central limitation — conceded.)
 
                             This is the deepest objection, and it is partly correct. The non-monotonic AIS curve is demonstrated on one minimal SOC pipeline with one orchestrator design and one re-delegation topology. v1 establishes that the attribution gap exists, is triggerable by a realistic gray-box adversary, and survives the two defenses standards bodies emphasize — in this system. It does not prove the gap holds across all RFC 8693 deployments or all multi-agent delegation topologies. That is a real gap between "shown in one instance" and "true in general," and v1 does not close it.
@@ -545,7 +548,23 @@ A benchmark's value rests on whether its measurement can be trusted. This sectio
                         7. "Why gray-box and not white-box?"
                             
                             The gray-box knowledge level (§3) matches every real-world precedent cited (§2) and avoids the Kerckhoffs category error: RFC 8693 runtime prompts are not cryptographic schemes, so white-box exposure of the orchestrator's prompt would collapse the attack into prompt engineering against a known target, conflating the delegation-layer measurement with model robustness. Gray-box is the level at which the attack is both realistic and reproducible.
-                            
+
+                        8. "Does this gap exist in normal operation, or only under attack?"
+
+                            **The misattribution gap is structural, not merely adversarial.**
+
+                            The §5 attack mechanism describes a path triggered by attacker-shaped alert content. The AIS denominator (§4) is scoped to such attacker-triggered actions to keep the measurement clean and attributable. But the underlying misattribution is a *latent property of the re-delegation pattern itself*: any containment action re-delegated through Enrich produces the same wrong-actor record, attack or no attack. The attacker does not create the vulnerability; the attacker exploits a property that exists in normal operation.
+
+                            This framing was noted at the end of §5 and is restated here for emphasis. It strengthens the finding: the vulnerability is not "attacks against AEGIS-AT succeed X% of the time" but "RFC 8693 delegation, applied to multi-agent re-delegation flows, produces misattribution by spec — and the spec mandates it (§4.1). The attack makes the wrongness profitable; the wrongness is intrinsic."
+
+                            For v1, the denominator stays scoped to attacker-triggered actions (the cleanest measurement). For v2, an expanded denominator including all re-delegated containment actions would more faithfully measure the structural property.
+                        
+                        9. "Your ground-truth recorder uses threads, not processes — is that really independent?"
+
+                            **v1 process-boundary proxy.**
+
+                            The ground-truth recorder (§2 Boundary 5) uses Python's `threading.current_thread().name` as a proxy for OS process identity. A misbehaving agent that renamed its thread mid-call could spoof ground truth. This is excluded by INV-5 of the project's invariants (no illegitimate component behavior) and by §3 of this threat model (the adversary controls alert text only, not agent code). The v1 proxy holds within the threat model the project tests. v2 hardening would use `multiprocessing` with `os.getpid()` for a true process boundary.
+
 **The discipline that protects all of the above.**
 
 Every AIS value in §6 is a pre-registered hypothesis, stated in this threat model before any attack code is written. If measurement contradicts a prediction — Baseline 3 not fully collapsing, Baseline 2 not reaching 1.0 — the discrepancy is reported as a finding, not quietly reconciled. This is the structural difference between a benchmark and a demo: the predictions are committed in advance, so the result means something whether or not it confirms the hypothesis.
