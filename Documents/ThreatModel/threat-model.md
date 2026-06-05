@@ -30,8 +30,7 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                     act claim nests back to the analyst. The orchestrator is the delegating authority; it does not call siem_action itself. 
                     
                     ⟨Critical call: is the orchestrator in or out of the attacker's reach? If the attack mechanism is confused-deputy via the orchestrator, the orchestrator is part of the attack surface; if it's token reuse or scope spoofing at the subagent layer, the orchestrator is trusted. This decision is really a §5 decision, but it determines whether you describe the orchestrator as trusted here.⟩
-                                                                                |
-                                                                                V
+                    → Decided:
                   - Trusted: The orchestrator must be inside the attackers reach for the sibling-impersonation attack to be realistic and forensically  
                     interesting
 
@@ -42,8 +41,7 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                     an IP). Scope: write/action access via siem_action. 
                     
                     ⟨your call: how much do you separate "decide to contain" from "execute containment"? Keeping it to one tool call keeps your one-degree-of-freedom cleanliness; splitting it is more realistic but muddies measurement. I'd keep it single for v1.⟩
-                                                                                |
-                                                                                V
+                    → Decided:
                   - Keep it in one Tool Call to keep one-degree-of-freedom cleanliness
                   - splitting can be done in future iterations
                   
@@ -51,11 +49,9 @@ Overview. A minimal SOC alert-triage pipeline. A human analyst authenticates and
                     parameter determines the operation, and the delegated token's scope claim determines whether the call is permitted.
                     ⟨your call: does siem_action do both read and action, with scope deciding what's permitted? Or is it one endpoint with a permission check? 
                     Simplest defensible version: one tool, scope-gated.⟩
-                                                                                |
-                                                                                V
+                    → Decided:
                      One endpoint with a scope‑gated permission check is the simplest defensible version for v1
-                                                                                |
-                                                                                V
+                    → Decided:
                       Tool Trusts the Token (Option 1)
                       The tool must extract the agent identity solely from the verified act claim in the delegation token. It must not accept a self‑reported identity. This is the only design that:
 
