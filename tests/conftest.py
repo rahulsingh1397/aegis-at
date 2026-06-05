@@ -11,5 +11,5 @@ import pathlib
 REPO_ROOT = pathlib.Path(__file__).parent.parent
 AEGIS = REPO_ROOT / "aegis-at"
 
-for subdir in ("auth", "policy","tools","harness"):
+for subdir in ("auth", "policy","tools","harness","orchestrator"):
     sys.path.insert(0, str(AEGIS / subdir))

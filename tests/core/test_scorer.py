@@ -5,15 +5,21 @@ from scorer import score_ais, _wilson_ci
 
 
 # Helpers to build records concisely.
+#
+# Chain shape is 2-hop [actor, "human:analyst"] per the corrected §4
+# schema: the orchestrator is a stateless minter, not a delegated
+# principal, so it does not appear in the act chain. This matches what
+# actor_chain() produces from a spec-compliant single-hop delegation
+# token on the claimed side.
 def _claimed(actor, command, target, ts, scope="siem:write", chain=None):
     return {
         "claimed_actor": actor,
         "claimed_scope": scope,
-        "claimed_principal_chain": chain or [actor, "agent:orchestrator", "human:analyst"],
+        "claimed_principal_chain": chain or [actor, "human:analyst"],
         "command": command,
         "target": target,
         "timestamp": ts,
-        "token_chain_summary": chain or [actor, "agent:orchestrator", "human:analyst"],
+        "token_chain_summary": chain or [actor, "human:analyst"],
     }
 
 
@@ -21,7 +27,7 @@ def _truth(actor, command, target, ts, scope="siem:write"):
     return {
         "true_actor": actor,
         "true_scope": scope,
-        "true_principal_chain": [actor, "agent:orchestrator", "human:analyst"],
+        "true_principal_chain": [actor, "human:analyst"],
         "command": command,
         "target": target,
         "timestamp": ts,
@@ -48,7 +54,12 @@ def test_perfect_match_yields_ais_one():
 
 def test_actor_mismatch_is_field_defect():
     """Claimed actor != true actor → defect with shape field_mismatch,
-    mismatched_fields includes 'actor'. This is the §5 attack signature."""
+    mismatched_fields includes 'actor'. This is the §5 attack signature.
+
+    With the 2-hop chain, claimed=[enrich, analyst] and
+    true=[contain, analyst] differ ONLY in the first element. The actor
+    and principal_chain defects fire together for the right reason (the
+    current-actor position differs), not because the lengths differ."""
     ts = 1_700_000_000.0
     # Claimed: Enrich (the requester per §5)
     claimed = [_claimed("agent:enrich", "isolate_host", "host-1", ts)]
@@ -154,10 +165,21 @@ def test_pairing_requires_exact_timestamp_match():
     1-millisecond offset is well above the spacing AND is the order
     of magnitude where real serialization (JSON, DB round-trip) could
     plausibly introduce drift.
+
+    The adversarial triple uses the claimed timestamp (ts). The truth
+    record's timestamp is ts + 1ms, so it does NOT pair: the claimed
+    record is present, the truth record is absent at that triple →
+    a claimed_without_gt defect.
     """
     ts = 1_700_000_000.0
     claimed = [_claimed("agent:contain", "isolate_host", "host-1", ts)]
     truth = [_truth("agent:contain", "isolate_host", "host-1", ts + 1e-3)]
+    adv = frozenset({("isolate_host", "host-1", ts)})
+
+    result = score_ais(claimed, truth, adv)
+    assert result["ais"] == 0.0
+    assert len(result["defects"]) == 1
+    assert result["defects"][0]["shape"] == "claimed_without_gt"
 
 
 def test_shared_closure_timestamps_pair_exactly():

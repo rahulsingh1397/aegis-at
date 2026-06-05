@@ -8,6 +8,13 @@ field. Documented limitation per threat-model.md §8.
 
 The recorder is harness infrastructure, NOT part of the SOC system
 under test. It must be unreachable from the attacker's input path.
+
+Chain shape (§4): true_principal_chain is [true_actor, "human:analyst"]
+— a 2-hop chain. The orchestrator does NOT appear: it is a stateless
+minting endpoint, not a delegated principal holding a token, so it has
+no place in the RFC 8693 act chain. This matches what actor_chain()
+produces on the claimed side from a spec-compliant single-hop
+delegation token. See threat-model.md §4 and §5.
 """
 
 import threading
@@ -46,11 +53,17 @@ def make_recorder(
             {
                 "true_actor": true_actor,
                 "true_scope": true_scope,
-                "true_principal_chain": [
-                    true_actor,
-                    "agent:orchestrator",
-                    "human:analyst",
-                ],
+                # Credential-aware (threat-model.md §6): an opaque per-agent
+                # credential (apikey dict, Baselines 1-2) carries no
+                # delegation chain -> None. A JWT (Baselines 3-4) is a
+                # delegation token -> 2-hop [executor, root]. Discrimination
+                # is on credential STRUCTURE; true_actor still comes from the
+                # thread, so INV-4 (independence from the token) is intact.
+                "true_principal_chain": (
+                    None
+                    if isinstance(token, dict)
+                    else [true_actor, "human:analyst"]
+                ),
                 "command": command,
                 "target": target,
                 "timestamp": ts,

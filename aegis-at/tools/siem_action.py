@@ -76,7 +76,25 @@ def siem_action(
     returns the record; caller accumulates the log.
 
     Raises whichever check fails first; record only returned if all pass.
+
+    Credential-aware (Baselines 1-2): a non-JWT per-agent credential
+    (dict with format="apikey") carries no delegation chain. Identity is
+    the authenticating agent; claimed_principal_chain is None. JWTs
+    (Baselines 3-4) take the act-claim path below. Discrimination is on
+    credential STRUCTURE only (threat-model.md §6); INV-2 holds for JWTs.
     """
+    if isinstance(token, dict) and token.get("format") == "apikey":
+        check_scope({"scope": token["scope"]}, command)  # scope gate only
+        return {
+            "claimed_actor": token["agent"],
+            "claimed_scope": token["scope"],
+            "claimed_principal_chain": None,   # no chain pre-delegation
+            "command": command,
+            "target": target,
+            "timestamp": now_fn(),
+            "token_chain_summary": None,
+        }
+
     claims = verify_token(token)  # checks 1-2
     check_chain_integrity(claims)  # check 3
     check_scope(claims, command)  # check 4

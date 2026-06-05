@@ -34,7 +34,11 @@ def test_recorder_observes_calling_thread_name():
     """The recorder reads true_actor from the calling thread,
     independent of what the token says. This is the load-bearing INV-4
     test: claimed identity (token) and true identity (thread) come
-    from causally independent sources."""
+    from causally independent sources.
+
+    Chain is 2-hop [true_actor, "human:analyst"] — the orchestrator is
+    a stateless minter, not a delegated principal, so it does not
+    appear (threat-model.md §4)."""
     gt_log = []
     wrapped = make_recorder(siem_action, gt_log)
 
@@ -54,7 +58,6 @@ def test_recorder_observes_calling_thread_name():
     assert record["true_scope"] == "siem:write"
     assert record["true_principal_chain"] == [
         "agent:contain",
-        "agent:orchestrator",
         "human:analyst",
     ]
     assert record["command"] == "isolate_host"

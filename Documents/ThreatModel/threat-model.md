@@ -252,7 +252,8 @@ true_scope:
                 required scopes (read commands → siem:read; action commands → siem:write).
 
 true_principal_chain:   
-                the delegation path the true actor was legitimately operating under, as an ordered list from immediate actor outward to the human principal: [true_actor, "agent:orchestrator", "human:analyst"]. 
+                the delegation path the true actor was legitimately operating under, as an ordered list from immediate actor outward to the human principal: [true_actor, "human:analyst"].
+                This is a 2-hop chain. The orchestrator does NOT appear in it: the orchestrator is a stateless token-exchange endpoint (per §2 Boundary 2), not a principal that holds a delegation token, so RFC 8693's act claim records no hop for it. The chain shape here therefore matches what a spec-compliant single-hop delegation token produces on the claimed side (the tool's actor_chain walk yields [current_actor, principal]).
                 Determined by the harness from the agent's legitimate context at invocation time, independent of any act claim presented to the tool.
 
 command, target, timestamp : 
@@ -278,6 +279,8 @@ is_correct(a) = 1   if   claimed_actor(a)              == true_actor(a)
 Comparison is strict: all three fields must match exactly. 
 
                   Comparison of principal_chain is ordered-list equality: the two lists must have the same length, the same members, in the same order. Any deviation — including a permutation, a missing hop, or an inserted hop — is a defect.
+
+                  Where no delegation chain exists — an opaque per-agent credential at Baselines 1–2 — principal_chain is None and is scored only when present: None on both the claimed and true sides is a match, while None against a populated chain is a defect. The ordered-list equality above governs once a delegation chain exists (Baselines 3–4).
 
 The Attribution Integrity Score for a baseline configuration B is then:
 
@@ -347,12 +350,10 @@ This section specifies the single attack mechanism in scope for v1: delegation-c
                       sub:   "human:analyst"               ← principal (on whose behalf)
                       scope: "siem:write"
                       act: {
-                        sub: "agent:enrich",               ← current actor (requester/wielder)
-                        act: {
-                          sub: "agent:orchestrator"        ← prior actor (informational only, §4.1)
-                        }
+                        sub: "agent:enrich"                ← current actor (requester/wielder)
                       }
                     ```
+                      The chain is two hops: the current actor (agent:enrich) and the root principal (human:analyst). The orchestrator does not appear — it minted this token but holds no delegated authority of its own, so RFC 8693's act claim records no hop for it (see the note below). A deeper chain would nest further act claims here as prior actors (informational only, per §4.1), but the v1 single-hop attack produces exactly this two-hop shape.
                       Two properties of this structure are decisive, and both follow directly from RFC 8693 §4.1:
 
                       1.  The current actor is the requester, not the executor. Per §4.1, "the outermost act claim represents the current actor." Here that is agent:enrich — the agent that requested the delegated token. The tool resolves claimed_actor from this current actor (per §2 Boundary 3).
@@ -360,6 +361,10 @@ This section specifies the single attack mechanism in scope for v1: delegation-c
                       2.  The executing agent does not appear in the token at all. Agent-Contain — the entity that actually invokes siem_action — is nowhere in the spec-compliant token. There is no claim in the RFC 8693 structure that records "who wielded the token at the resource," distinct from "who was delegated the authority." The spec's own examples (§A.2.3) describe the act subject as "the actor that will wield the security token," implicitly assuming the requester and the wielder are the same entity. In the multi-agent re-delegation pattern (§5), they are not.
 
                       The misattribution is therefore not a property of any field being read incorrectly. It is a property of the spec-compliant token having no field that can express the divergence between requester and executor. The token faithfully records everything RFC 8693 defines; the executor's identity is simply not among the things RFC 8693 defines.                     
+
+**A note on the orchestrator's absence from the chain.**
+                      The orchestrator appears NOWHERE in the act chain either — and for a reason worth stating, because it bears on the central thesis. When this threat model was first drafted, §4's ground-truth schema recorded the chain as [true_actor, "agent:orchestrator", "human:analyst"], a 3-hop list. The intuition was natural: the delegation flowed analyst → orchestrator → enrich, so surely all three belong in the chain. That intuition is wrong about RFC 8693. The orchestrator is a stateless token-exchange endpoint (§2 Boundary 2); it holds no delegation token of its own and is not a delegated principal. RFC 8693's act claim records principals who hold delegated authority, not the endpoints that mint tokens. A spec-compliant token produced by the exchange therefore contains only [current_actor, principal] — a 2-hop chain — and §4's schema was corrected to match.
+                      That the benchmark's own author initially modeled a hop the standard does not produce is itself small evidence for the thesis: the gap between how practitioners intuitively reason about delegation chains and what RFC 8693 actually records is exactly the gap that makes this misattribution surface in real systems. The "→ orchestrator →" phrasing used elsewhere in this section is conceptual — it describes the flow of the exchange request, not the literal nesting of the minted token.
 
 **The attack.**
 
@@ -386,7 +391,7 @@ The attacker's capability (per §3) is to control the content of an alert that E
                             The act chain correctly records the requesting agent.
                         2.  "Enrich was manipulated / prompt-injected." No. Enrich made the correct decision — the alert genuinely warranted containment. The result holds even if Enrich is a
                             perfect, unfoolable agent, because the misattribution arises from delegation semantics, not from Enrich's judgment.
-                        3.  "The tool skipped a check." No (per §2 Boundary 3). Every check passed. "The tool faithfully recorded the current actor from the verified act claim, exactly as RFC 8693 §4.1 mandates.
+                        3.  "The tool skipped a check." No (per §2 Boundary 3). Every check passed. The tool faithfully recorded the current actor from the verified act claim, exactly as RFC 8693 §4.1 mandates.
                         4.  "You just didn't sanitize alert text." No. No component read identity from alert text. The orchestrator built the chain from tokens, not alert content. Alert 
                             content's only role was to legitimately trigger a containment-warranting situation.
 
@@ -434,16 +439,29 @@ For each baseline, two things are stated: what signal the tool uses to determine
                         4.  Note: authorization still flows through Enrich's request, but attribution is bound to authentication, which tracks the  
                             executor. The separation of "who was authorized" from "who is recorded acting" is what keeps attribution correct here. This separation is precisely what RFC 8693 removes in Baseline 3.
 
-**Baseline 3 — Per-agent identity + RFC 8693 act claims.**
+**Baseline 3 — Per-agent identity + delegation across the requester/wielder boundary.**
 
                         Delegation chains are added. The tool now resolves the claimed actor from the delegation chain's current actor (the top-level act.sub), as mandated by RFC 8693 §4.1: "For the purpose of applying access control policy, the consumer of a token MUST only consider the token's top-level claims and the party identified as the current actor by the act claim. Prior actors identified by any nested act claims are informational only and are not to be considered in access control decisions."
 
                         1.  Signal read: the current actor in the delegation chain (act.sub) = Enrich, the requester.
-                        2.  Tracks executor? No. The current actor is the agent that requested the delegated authority (Enrich), not the agent that 
-                            executed the action (Contain). Per §4.1, the consumer MUST attribute to the current actor and MUST NOT use prior actors for the decision — so even a spec-perfect implementation attributes to Enrich.
+                        2.  Tracks executor? No — and the reason is precise. RFC 8693's current actor is the wielder: the party that presents the
+                            token at the resource (§A.2.3 calls it "the actor that will wield the security token"; §1.1 frames it as the agent actually
+                            taking the action). Here the orchestrator mints the token naming Enrich, the requester — because at mint time it does not
+                            yet know which sibling will execute (see §8.5). The token thus asserts Enrich as the wielder. Under unbound bearer tokens,
+                            Contain lifts that token and presents it, and nothing in the protocol detects the substitution. The tool, applying §4.1
+                            correctly for the access-control decision, resolves the current actor (Enrich) and the system records it; the executor
+                            (Contain) appears in no field the standard defines.
                         3.  Predicted AIS: ≈ 0.0. Attribution is wrong.
-                        4.  This is the central result, and its force comes from the word "MUST." The misattribution is not an implementation defect that 
-                            a careful engineer could fix by reading a different field. RFC 8693 §4.1 mandates attributing to the current actor and forbids considering prior actors for access-control purposes. The spec's delegation model (§A.2.3, §A.2.5) assumes the current actor and the executing party are the same entity; in multi-agent re-delegation they diverge, and the standard provides no compliant field that records the executor. A reviewer cannot answer "just read a different field," because every field the spec defines either names the requester (act.sub), the principal (sub), or prior actors that §4.1 forbids using. Adding RFC 8693 delegation — the primitive NIST/NCCoE (Feb 2026) emphasizes for non-repudiation — therefore regresses attribution relative to Baseline 2, and does so by following the standard correctly, not by violating it.
+                        4.  This is the central result — narrower and more durable than "the spec forces this." The misattribution needs two
+                            ingredients, neither sufficient alone: (i) unbound bearer tokens carrying a current-actor claim — RFC 8693 inherits
+                            OAuth 2.0's default holder model and does not require sender-constraint, so a token naming Enrich can be presented by
+                            Contain; and (ii) a multi-agent hand-off where the wielder differs from the issuer-named actor — the orchestrator names
+                            the requester because the executor is undetermined at mint time. §4.1's MUST is scoped to the access-control decision and
+                            is silent on audit; the realistic implementation reuses the access-control identity (the current actor) for the audit
+                            record, and that identity is necessarily the named requester. RFC 8693 therefore does not prevent the misattribution and
+                            offers no compliant field that records the executor when it differs from the named actor — but neither does it mandate it.
+                            Signed delegation regresses attribution relative to Baseline 2 because it introduces a current-actor claim that the
+                            unbound-bearer hand-off renders unreliable, where Baseline 2's execution-time authenticator could not be lifted. (The standardized binding hypothesized to prevent the lift — sender-constraint via DPoP / RFC 8705 — is named in §8.10 and deferred to future work.)
 
 **Baseline 4 — + Tamper-evident log.**
 
@@ -461,9 +479,9 @@ For each baseline, two things are stated: what signal the tool uses to determine
 
                         | Baseline | Configuration          | Signal read                           | Tracks executor? | Predicted AIS |
                         |----------|------------------------|---------------------------------------|------------------|---------------|
-                        | 1        | Shared account         | shared identity                       | undefined        | ≈ 0.0         |
-                        | 2        | Per-agent identity     | execution-time authenticator          | yes              | ≈ 1.0         |
-                        | 3        | + RFC 8693 act claims  | delegation current actor (requester)  | no               | ≈ 0.0         |
+                        | 1        | Shared account         | shared credential (no chain)          | undefined        | ≈ 0.0         |
+                        | 2        | Per-agent identity     | per-agent authenticator (no chain)    | yes              | ≈ 1.0         |
+                        | 3        | + delegation across the requester/wielder boundary | delegation current actor (requester) | no               | ≈ 0.0         |
                         | 4        | + tamper-evident log   | delegation current actor (requester)  | no               | ≈ 0.0         |
 
 
@@ -521,7 +539,7 @@ A benchmark's value rests on whether its measurement can be trusted. This sectio
 
                             This is the deepest objection, and it is partly correct. The non-monotonic AIS curve is demonstrated on one minimal SOC pipeline with one orchestrator design and one re-delegation topology. v1 establishes that the attribution gap exists, is triggerable by a realistic gray-box adversary, and survives the two defenses standards bodies emphasize — in this system. It does not prove the gap holds across all RFC 8693 deployments or all multi-agent delegation topologies. That is a real gap between "shown in one instance" and "true in general," and v1 does not close it.
 
-                            What makes the result meaningful despite n=1 is why the gap appears. The misattribution is not a quirk of this topology; it follows from RFC 8693 §4.1, which mandates (MUST) that a token consumer attribute to the current actor and forbids using prior actors for access decisions, combined with the standard's implicit assumption (§A.2.3, §A.2.5) that the current actor and the executor are the same entity. That assumption is topology-independent. Wherever a multi-agent system separates the requester of a delegated capability from its executor, the gap should appear — because the standard provides no field to record the executor when it differs from the requester. v1 measures one instance; the mechanism behind it is structural, which makes generalization likely but unproven. Establishing the gap's prevalence across real delegation architectures is the primary item of future work.
+                            What makes the result meaningful despite n=1 is why the gap appears. The misattribution is not a quirk of this topology; it follows from RFC 8693 §4.1, which scopes its MUST to the access-control decision (the current actor), reused in practice for the audit record,, combined with the standard's implicit assumption (§A.2.3, §A.2.5) that the current actor and the executor are the same entity. That assumption is topology-independent. Wherever a multi-agent system separates the requester of a delegated capability from its executor, the gap should appear — because the standard provides no field to record the executor when it differs from the requester. v1 measures one instance; the mechanism behind it is structural, which makes generalization likely but unproven. Establishing the gap's prevalence across real delegation architectures is the primary item of future work.
                             
                             This concession is stated first, and deliberately, because a reviewer will reach for it first; meeting it head-on is more credible than burying it.
                             
@@ -539,7 +557,9 @@ A benchmark's value rests on whether its measurement can be trusted. This sectio
                             
                         5. "This is just a logic bug a careful engineer would fix."
 
-                            This is the objection §6's central result is built to defeat, and the defeat is spec-grounded rather than asserted. RFC 8693 §4.1 mandates attributing to the current actor and forbids using prior actors for access-control decisions. A spec-compliant implementation cannot "read a different field," because every field the standard defines names the requester (act.sub), the principal (sub), or prior actors that §4.1 forbids using for the decision. The misattribution arises from following the standard correctly, not from violating it. It is a property of the standard's semantics in the multi-agent case, not an implementation defect.
+                            The honest defense is not that the spec forces the behavior — §4.1's MUST is access-control-scoped (§6). It is topological. The fix a reviewer reaches for is "name the wielder, not the requester." But in the topology §1 describes, the orchestrator mints the delegated token and hands it downstream, where routing decides which sibling executes; the wielder is not determined at mint time, so the orchestrator cannot place it in the current-actor claim. Naming the requester is not a careless choice this implementation made — it is what any orchestrator must do when minting precedes execution-routing, which is the realistic multi-agent shape, not an unusual one.
+
+                            Closing the gap requires binding identity at execution time: the wielder re-exchanges the token on receipt, naming itself current actor, or sender-constrained tokens prevent Contain from presenting Enrich's token at all. Both work — and both are exactly the execution-identity binding §8.10 names as the layer beyond Baseline 4, deferred to future work. So the objection does not dismiss the result; it identifies the missing layer the result measures the absence of. A "careful engineer" closes this gap only by adding a binding none of the four tested baselines include — which is the finding, not a refutation of it.
                             
                         6. "The agents' decisions are scripted, not real LLM behavior."
                             
@@ -555,7 +575,7 @@ A benchmark's value rests on whether its measurement can be trusted. This sectio
 
                             The §5 attack mechanism describes a path triggered by attacker-shaped alert content. The AIS denominator (§4) is scoped to such attacker-triggered actions to keep the measurement clean and attributable. But the underlying misattribution is a *latent property of the re-delegation pattern itself*: any containment action re-delegated through Enrich produces the same wrong-actor record, attack or no attack. The attacker does not create the vulnerability; the attacker exploits a property that exists in normal operation.
 
-                            This framing was noted at the end of §5 and is restated here for emphasis. It strengthens the finding: the vulnerability is not "attacks against AEGIS-AT succeed X% of the time" but "RFC 8693 delegation, applied to multi-agent re-delegation flows, produces misattribution by spec — and the spec mandates it (§4.1). The attack makes the wrongness profitable; the wrongness is intrinsic."
+                            This framing was noted at the end of §5 and is restated here for emphasis. It strengthens the finding: the vulnerability is not "attacks against AEGIS-AT succeed X% of the time" but "RFC 8693 delegation, applied to multi-agent re-delegation flows, produces misattribution as a latent property of the unbound-bearer hand-off — the spec neither prevents nor mandates it (§4.1's MUST is access-control-scoped) and offers no field that records the executor. The attack makes the wrongness profitable; the wrongness is intrinsic."
 
                             For v1, the denominator stays scoped to attacker-triggered actions (the cleanest measurement). For v2, an expanded denominator including all re-delegated containment actions would more faithfully measure the structural property.
                         
@@ -564,6 +584,10 @@ A benchmark's value rests on whether its measurement can be trusted. This sectio
                             **v1 process-boundary proxy.**
 
                             The ground-truth recorder (§2 Boundary 5) uses Python's `threading.current_thread().name` as a proxy for OS process identity. A misbehaving agent that renamed its thread mid-call could spoof ground truth. This is excluded by INV-5 of the project's invariants (no illegitimate component behavior) and by §3 of this threat model (the adversary controls alert text only, not agent code). The v1 proxy holds within the threat model the project tests. v2 hardening would use `multiprocessing` with `os.getpid()` for a true process boundary.
+
+                        10. "Sender-constrained tokens would close this — why didn't you test them?" (The layer beyond Baseline 4 — named, scoped out.)
+
+                            The gap requires unbound bearer tokens (§6): Contain can present a token minted for Enrich only because nothing binds the token to its holder. Two standardized mechanisms bind it — DPoP (RFC 9449) and mutual-TLS-bound tokens (RFC 8705). Under either, Contain cannot present Enrich's token and must obtain its own, so the current actor would track the executor. Sender-constraint is effectively a Baseline 5 — the layer hypothesized to recover the curve; whether it does is a question for future work, not a result claimed here. v1 does not implement it, deliberately: the contribution is to show that the primitives standards bodies currently emphasize for agent non-repudiation (per-agent identity, signed delegation chains, tamper-evident logs — Baselines 2–4) do not close the gap, and to name the standardized-but-under-emphasized layer hypothesized to close it. Measuring Baseline 5 against the same attack is the primary defensive item of future work. Naming it converts the strongest RFC-literate objection — "you ignored token binding" — into a scope boundary chosen on purpose.
 
 **The discipline that protects all of the above.**
 
