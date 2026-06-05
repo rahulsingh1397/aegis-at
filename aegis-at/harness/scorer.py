@@ -165,3 +165,28 @@ def score_ais(
         "ci_high": ci_high,
         "defects": defects,
     }
+
+
+def is_non_monotonic(curve: dict) -> bool:
+    """Verify the §6 headline finding on a curve produced by emit_curve.
+
+    Concretely:
+      - B2 > B1: per-agent identity beats shared account
+      - B2 > B3: delegation REGRESSES attribution relative to per-agent identity
+      - B4 == B3: tamper-evident logging is orthogonal to attribution (§6)
+
+    Returns True if the curve matches the prediction; False otherwise.
+    A False return is a publishable finding — INV-7 binds §6's pre-registered
+    predictions to whatever the measurement shows; a contradicted prediction
+    is reported, not silenced.
+
+    v1 == B4 == B3 is exact because B4 currently runs B3's code path (same
+    token, same execution) — byte-identical by construction. When the
+    tamper-evident log module lands in v2 and B4 has a separate execution,
+    this evolves to `abs(b4 - b3) < eps` for a small tolerance.
+    """
+    b1 = curve["B1"]["ais"]
+    b2 = curve["B2"]["ais"]
+    b3 = curve["B3"]["ais"]
+    b4 = curve["B4"]["ais"]
+    return b2 > b1 and b2 > b3 and b4 == b3

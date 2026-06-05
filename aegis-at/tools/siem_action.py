@@ -88,7 +88,7 @@ def siem_action(
         return {
             "claimed_actor": token["agent"],
             "claimed_scope": token["scope"],
-            "claimed_principal_chain": None,   # no chain pre-delegation
+            "claimed_principal_chain": None,  # no chain pre-delegation
             "command": command,
             "target": target,
             "timestamp": now_fn(),

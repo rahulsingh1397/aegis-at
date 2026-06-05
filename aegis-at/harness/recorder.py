@@ -60,9 +60,7 @@ def make_recorder(
                 # is on credential STRUCTURE; true_actor still comes from the
                 # thread, so INV-4 (independence from the token) is intact.
                 "true_principal_chain": (
-                    None
-                    if isinstance(token, dict)
-                    else [true_actor, "human:analyst"]
+                    None if isinstance(token, dict) else [true_actor, "human:analyst"]
                 ),
                 "command": command,
                 "target": target,
