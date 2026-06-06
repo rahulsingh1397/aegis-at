@@ -9,7 +9,7 @@ Reconcile ALL §-cross-references against the locked 8-section map:
   §7 Scope discipline
   §8 Validity threats
 Checks:
-  - Search "§9" → must not exist; every hit becomes §8.
+  - Search for any ninth-section reference → it must not exist; every hit becomes §8.
   - Search "§6" → must mean Defense baselines, not the metric.
   - Search "§7" → must mean Scope discipline, not baselines.
   - Search "§8" → must mean Validity threats, not scope/backlog.

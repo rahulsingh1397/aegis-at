@@ -123,7 +123,7 @@ Trust boundaries answers two questions a reviewer will absolutely ask: where doe
 
                       - Baselines 1–3 (no tamper-evidence): the log is a regular append-only file. Entries are correct at write time but the log itself carries no integrity proof. An adversary with later access to the log could in principle modify, delete, or reorder entries; this is out of scope for v1's threat model (the attacker's capability is alert-content control, per §3), but it means the log alone is not a forensic record.
 
-                      - Baseline 4 (tamper-evident): entries are signed and chained — each entry includes a hash of the previous entry, and the chain is signed by a dedicated logger key not held by any agent or the orchestrator. Tampering becomes cryptographically detectable. The log is now a forensic record.
+                      - Baseline 4 (tamper-evident) — *design; attribution-only in v1*: the intended configuration signs and hash-chains each entry — each entry includes a hash of the previous entry, and the chain is signed by a dedicated logger key not held by any agent or the orchestrator — so post-hoc tampering becomes cryptographically detectable and the log is a forensic record. **In v1 the hash-chaining module is not implemented:** B4 reuses B3's claimed-actor resolution, so its *attribution* equals B3 by construction. Testing log *integrity* (a separate metric from attribution) requires the real hash-chained module and is named as future work. This does not affect the v1 attribution result — the wrong actor is committed upstream at minting, before any logging layer sees the entry.
 
                       What this boundary does and does not do in the attack: the attack does not target Boundary 4 — the claimed actor written here is already wrong by the time it arrives, having been corrupted at Boundary 2 and faithfully transcribed by Boundary 3. The log honestly records the misattribution. 
                       
@@ -300,7 +300,7 @@ The Attribution Integrity Score for a baseline configuration B is then:
 
 **Stability and sample size.**
 
-                      Per §3, the attacker can repeat attempts (no rate limit). For a stable AIS value at each baseline, each baseline configuration is run with N independent adversarial actions. N is a tunable parameter; the implementation will start at N = 100 per baseline and report 95% confidence intervals (Wilson interval) alongside the point estimate. If intervals are wide, N is increased before locking the result. The exact N used in the published curve will be documented in the results section.
+                      The v1 attack is **categorical, not stochastic**: under scripted, deterministic agents the misattribution succeeds *by construction* on every adversarial action, so the finding is a curve *shape*, not a frequency estimate. The harness establishes this with verify_deterministic(), which proves each baseline yields byte-identical records across repeated runs — so a single canonical execution per baseline is sufficient, and confidence intervals are **degenerate by design** (AIS ∈ {0, 1} per baseline, not a sample proportion). The originally-planned stochastic sweep — a probabilistic policy under which AIS becomes a real attack-*frequency* estimate, scored over N independent actions with 95% Wilson intervals (starting at N = 100 per baseline, increased if intervals are wide) — is **future work**, pairing with the v2 expanded denominator in §8.8. The N/Wilson design is retained here as the v2 measurement plan, not the v1 method.
 
 **What this section does NOT define.**
 
@@ -461,7 +461,7 @@ For each baseline, two things are stated: what signal the tool uses to determine
 
 **Baseline 4 — + Tamper-evident log.**
 
-                        The action log is made tamper-evident (signed, hash-chained entries; logger key held by no agent or the orchestrator).
+                        The action log is designed to be made tamper-evident (signed, hash-chained entries under a logger key held by no agent or the orchestrator). **In v1 this module is not built — B4's attribution equals B3 by construction**, and a real tamper-evident log (which would test log *integrity*, a metric separate from attribution) is future work. The analysis below is the prediction that future module would confirm; it does not describe code shipped in v1.
 
                         1.  Signal read: same as Baseline 3 (current actor in the chain). Tamper-evidence protects the integrity of the recorded entry; it
                             does not change what is recorded.
@@ -486,6 +486,8 @@ For each baseline, two things are stated: what signal the tool uses to determine
 **Hypotheses, not results.**
 
                         These AIS values are pre-registered hypotheses, stated before implementation, to be confirmed or refuted by measurement. If the measured curve differs — for example, if Baseline 3 does not fully collapse, or if Baseline 2 does not reach 1.0 — the discrepancy is itself a finding to investigate, and the threat model commits to reporting it. The defect-breakdown metric (§4) will show which of the three attribution fields (actor, scope, principal_chain) each baseline gets right or wrong. Note that for this attack the actor and principal_chain defects are expected to be correlated (both flag when Enrich occupies the current-actor position); this correlation is a true property of the attack, not a metric artifact, and is reported as such.
+
+                        **Status (post-build):** the predicted curve was reproduced deterministically against the real modules; every AIS value is asserted in the test suite against the prediction recorded here before the attack code was written. A contradicted prediction would be reported as a finding, not silenced. See the repository README for build status (test count, gate, reproduction).
 
 ---
 

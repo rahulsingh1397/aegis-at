@@ -52,7 +52,7 @@ Considerations for §5:
     manipulation as primary; mention direct prompt injection
     as a variant if it strengthens the result.
 
-## §9 hook — validity threats this section will face
+## §8 hook — validity threats this section will face
 
 A reviewer might ask:
   (a) "Why not white-box?" Answer: Kerckhoffs is for cipher

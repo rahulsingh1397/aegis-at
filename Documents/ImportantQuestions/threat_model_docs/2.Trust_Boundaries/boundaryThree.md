@@ -32,7 +32,7 @@ Three candidate framings were considered. Locked as (a):
 Cline 2026 precedent): legitimate authority tricked into misdirection,
 not new authority granted.
 
-## §9 hook — closing the "missing check" reading
+## §8 hook — closing the "missing check" reading
 
 If a reviewer raises any specific check not in the five-item list
 (e.g., audience claim, key ID rotation, token binding, nonce check),

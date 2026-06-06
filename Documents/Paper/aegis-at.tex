@@ -1,0 +1,913 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% AEGIS-AT --- Attribution Integrity Benchmark
+% Self-contained, arXiv-ready LaTeX source.
+% Compiles with pdflatex (run twice for cross-references / hyperref).
+% Dependencies are all standard TeX Live / MiKTeX packages.
+% ---------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue!55!black,
+  pdftitle={AEGIS-AT: Measuring Attribution Integrity Under Sibling Impersonation in Multi-Agent Delegation},
+  pdfauthor={Rahul Singh}
+}
+
+% Code listing style ---------------------------------------------------------
+\definecolor{codebg}{gray}{0.96}
+\definecolor{codecomment}{rgb}{0.30,0.45,0.30}
+\definecolor{codekw}{rgb}{0.20,0.20,0.60}
+\lstdefinestyle{aegis}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  numbers=none,
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  showstringspaces=false,
+  captionpos=b,
+  xleftmargin=4pt,
+  xrightmargin=4pt
+}
+\lstset{style=aegis}
+
+% Convenience macros ---------------------------------------------------------
+\newcommand{\ais}{\textsc{ais}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\actsub}{\code{act.sub}}
+\newcommand{\siem}{\code{siem\_action}}
+
+\title{\textbf{AEGIS-AT: Measuring Attribution Integrity Under\\
+Sibling Impersonation in Multi-Agent Delegation}\\[4pt]
+\large A Reproducible Adversarial Benchmark Showing That RFC 8693 Delegation\\
+Can Make Audit Attribution \emph{Worse}, Not Better}
+
+\author{Rahul Singh\thanks{Independent researcher, Jersey City, NJ.
+Correspondence: \href{mailto:rahul.rs1397@gmail.com}{rahul.rs1397@gmail.com}
+~$\cdot$~ \href{https://github.com/rahulsingh1397}{github.com/rahulsingh1397}.
+Code and documentation are dual-licensed: Apache-2.0 (code) and CC~BY~4.0
+(documentation).}}
+
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Standards bodies (NIST NCCoE, OpenID Foundation) are actively recommending
+cryptographic delegation --- principally OAuth~2.0 Token Exchange (RFC~8693) ---
+as the primitive that will give multi-agent AI systems \emph{non-repudiation}:
+the property that every consequential action can be traced to a responsible
+party. We present \textbf{AEGIS-AT}, a controlled, reproducible, adversarial
+benchmark that tests this assumption directly, and find that it fails in a
+specific and structural way. AEGIS-AT implements a minimal Security Operations
+Center (SOC) triage pipeline --- two sibling agents sharing one scope-gated tool
+--- and measures an \textbf{Attribution Integrity Score} (\ais{}): the fraction
+of adversarial actions whose claimed \code{(actor, scope, principal\_chain)}
+exactly matches an independently observed ground truth. We score \ais{} across
+four progressive defense baselines that are \emph{configuration flags over a
+single codebase}, so the four scores are genuinely comparable rather than
+apples-to-oranges. The result is a \textbf{non-monotonic curve}: attribution is
+perfect ($\ais{}=1.0$) under simple per-agent identity, then \emph{regresses to
+zero} ($\ais{}=0.0$) the moment RFC~8693 delegation is added, and tamper-evident
+logging does not recover it. The cause is not a bug: RFC~8693's ``current
+actor'' (\actsub{}) names the agent that \emph{requested} delegated authority,
+but in a multi-agent hand-off the agent that \emph{executes} the action can
+differ --- and the standard provides no field that records the executor. An
+attacker who can shape the content of a single security alert can therefore
+cause a high-consequence action to be taken and attributed to the wrong,
+lower-privilege sibling, while every cryptographic check passes. The finding is
+\emph{categorical} (it succeeds by construction, not with some probability) and
+is verified deterministic: each baseline yields byte-identical records across
+repeated runs. All \ais{} values are pre-registered in the threat model before
+the attack code was written. We argue the gap is structural rather than
+topology-specific, name the standardized layer hypothesized to close it
+(sender-constrained tokens, RFC~9449 / RFC~8705), and release the full pipeline
+(59 tests; reproduces in seconds).
+\end{abstract}
+
+\noindent\textbf{Keywords:} multi-agent systems, AI agent security, attribution,
+non-repudiation, OAuth 2.0 Token Exchange, RFC 8693, confused deputy, delegation,
+audit logging, benchmark.
+
+\tableofcontents
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+Multi-agent AI systems increasingly take consequential, irreversible actions:
+quarantining hosts, blocking accounts, modifying infrastructure. When such an
+action is taken, an audit log is expected to answer one question: \emph{which
+agent did this?} The dominant answer being standardized is cryptographic
+delegation. A human principal authenticates once; an orchestrator mints scoped
+delegation tokens for each agent; the token carries a verifiable chain of
+``who acts on whose behalf.'' OAuth~2.0 Token Exchange (RFC~8693) is the
+mechanism, and NIST's NCCoE and the OpenID Foundation have both, in early 2026,
+named auditing and non-repudiation of AI agent actions as an open problem to be
+solved with exactly these primitives~\cite{nist2026,openid2026}.
+
+This paper asks whether that assumption survives contact with a realistic
+adversary, and answers: \emph{not in the multi-agent re-delegation case}. We
+build the smallest system in which the failure can occur --- two sibling agents
+(\code{Agent-Enrich}, read-only; \code{Agent-Contain}, write-capable) sharing one
+scope-gated tool --- and we measure attribution correctness under a
+sibling-impersonation attack across four defense configurations.
+
+\paragraph{The finding.}
+Attribution is \emph{perfect} under simple per-agent identity (Baseline~2,
+$\ais{}=1.0$). Adding RFC~8693 delegation (Baseline~3) drives it to
+$\ais{}=0.0$, and tamper-evident logging (Baseline~4) leaves it there. The curve
+is non-monotonic: the two primitives most emphasized for agent non-repudiation
+--- signed delegation chains and tamper-evident logs --- do not close the gap,
+and signed delegation \emph{actively opens} it relative to plain per-agent
+identity. Table~\ref{tab:curve} states the result.
+
+\begin{table}[h]
+\centering
+\caption{The measured Attribution Integrity Score across four baselines. Each
+baseline is a configuration flag over one codebase; only the credential differs.
+Measured values reproduce the pre-registered prediction exactly.}
+\label{tab:curve}
+\begin{tabular}{clccc}
+\toprule
+\textbf{Baseline} & \textbf{Defense in place} & \textbf{Signal read} &
+\textbf{Tracks executor?} & \textbf{\ais{}} \\
+\midrule
+B1 & Shared service account        & shared credential          & undefined & \textbf{0.0} \\
+B2 & Per-agent identity            & execution-time authenticator & yes     & \textbf{1.0} \\
+B3 & + RFC 8693 delegation         & delegation current actor   & no        & \textbf{0.0} \\
+B4 & + tamper-evident log          & delegation current actor   & no        & \textbf{0.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why it regresses (a one-paragraph preview).}
+RFC~8693's ``current actor'' (\actsub{}) is the party that \emph{requested} the
+delegated authority. In a multi-agent hand-off, the agent that \emph{executes}
+the action --- the one that actually presents the token at the resource --- can
+differ from the one named in the token. The standard provides no field that
+records the executor when it differs from the requester. RFC~8693~\S4.1's
+normative \code{MUST} is scoped to the \emph{access-control decision} (``consider
+only the current actor''), not to audit logging; a realistic implementation
+reuses that same access-control identity for the audit record. Combined with
+unbound bearer tokens (RFC~8693 inherits OAuth~2.0's default holder model, which
+does not require sender-constraint) and a topology where minting precedes
+execution-routing, the system logs the \emph{requester}. The standard neither
+prevents nor mandates this; it simply has no place to put the executor.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{A metric.} The Attribution Integrity Score (\ais{}): a strict,
+  three-field (\code{actor}, \code{scope}, \code{principal\_chain}) measure of
+  whether a claimed audit record matches an independently observed ground truth,
+  with a defect breakdown that diagnoses \emph{which} field broke (\S\ref{sec:metric}).
+  \item \textbf{A benchmark.} Four defense baselines realized as configuration
+  flags over a single codebase, so \ais{} differences are attributable to the
+  flag and not to incidental implementation quality (\S\ref{sec:baselines}).
+  \item \textbf{An independent ground-truth construction.} A harness recorder that
+  observes the true executing agent out-of-band --- from the execution context,
+  never from the token --- making the comparison non-circular (\S\ref{sec:recorder}).
+  \item \textbf{A pre-registered, reproduced result.} The non-monotonic curve,
+  predicted in the threat model before the attack code was written, reproduced
+  deterministically against the real modules; the attack succeeds \emph{by
+  construction} (\S\ref{sec:results}).
+  \item \textbf{A structural argument and a named fix.} An analysis of why the gap
+  is topology-independent, and identification of the standardized layer
+  (sender-constrained tokens) hypothesized to close it, scoped as future work
+  (\S\ref{sec:discussion}, \S\ref{sec:future}).
+\end{enumerate}
+
+\paragraph{Scope and honesty up front.}
+This is one minimal system ($n=1$), with deterministic scripted agents (no LLM),
+and Baseline~4 is attribution-only in v1 (the hash-chained tamper-evident log is
+named as future work). These are deliberate boundaries that buy a clean causal
+claim; we state them here and defend them in \S\ref{sec:validity} rather than
+let a reviewer find them.
+
+% ===========================================================================
+\section{Background and Related Work}
+\label{sec:background}
+% ===========================================================================
+
+\subsection{RFC 8693 delegation and the \texttt{act} claim}
+OAuth~2.0 Token Exchange (RFC~8693) represents delegation with the \code{act}
+(``actor'') claim. A token's \code{sub} names the principal whose authority is
+being exercised; the \code{act} claim names who is acting on that principal's
+behalf, and \code{act} can nest, forming a verifiable chain back to the original
+human. RFC~8693~\S4.1 is explicit that, for access-control purposes, a consumer
+\code{MUST} consider only the token's top-level claims and the party identified
+as the \emph{current actor} by the (outermost) \code{act} claim; prior actors in
+nested \code{act} claims are ``informational only.'' The spec's own delegation
+example (\S A.2.5) and its description of the actor as ``the actor that will
+wield the security token'' (\S A.2.3) implicitly assume that the party who
+\emph{requested} the token and the party who \emph{wields} it at the resource are
+the same entity. That assumption is the seam this paper pries open.
+
+\subsection{The confused deputy, old and new}
+The confused-deputy pattern --- a privileged component induced to misuse its
+authority on behalf of a less-privileged party --- dates to
+Hardy~\cite{hardy1988}. In agentic AI it has re-emerged as a high-severity
+pattern: the Cloud Security Alliance's March~2026 research
+note~\cite{csa2026} establishes confused-deputy prompt injection as a
+high-severity threat in agent deployments and observes that when an action runs
+under a trusted agent's identity, ``audit logs may look legitimate and delay
+detection'' --- precisely the attribution failure we measure. The most public
+production instance is \emph{Clinejection} (February~2026): a crafted GitHub
+issue title drove an AI triage agent into a supply-chain compromise, an
+unauthorized npm package reaching $\sim$4{,}000 developer machines in an eight-hour
+window~\cite{clinejection}. The Salesloft~Drift breach
+(August~2025)~\cite{salesloft} is a production demonstration of the
+\emph{unbound bearer-token} weakness our Baseline~3 depends on: stolen OAuth
+tokens, presented by a party that was not their legitimate holder, were used to
+exfiltrate data from 700+ organizations.
+
+\subsection{The standards call}
+NIST's NCCoE concept paper \emph{Accelerating the Adoption of Software and AI
+Agent Identity and Authorization} (February~2026)~\cite{nist2026} names auditing
+and non-repudiation of AI agent actions as an open problem and asks how existing
+identity standards (OAuth~2.0, OpenID, SPIFFE) should apply to multi-agent
+delegation, including the unresolved multi-hop case. The OpenID Foundation's
+response~\cite{openid2026} frames the most urgent risks as failures of
+\emph{trust} --- ``Who authorised this agent to act? On whose behalf? Can that be
+verified?'' --- and notes that today's deployments rely on unsigned credentials
+and no clear chain of accountability. The Foundation for American Innovation's
+\emph{Human-Anchored Intent-Bound Delegation} (HAID) proposal~\cite{haid}
+offers a candidate fix: signed, scope-attenuating, human-anchored delegation
+chains --- the kind of execution-identity binding we name as future work.
+
+\subsection{Closest prior academic work}
+\emph{The Misattribution Gap}~\cite{misattribution} measures misattribution in
+agentic systems across 64 documented failures, finding that attribution systems
+consistently blamed the model rather than the poisoned memory layer. It is
+adjacent but a \emph{different layer}: it measures model-vs-memory
+misattribution (memory poisoning, semantic norm drift), whereas AEGIS-AT
+measures agent-vs-agent sibling impersonation at the delegation layer. To our
+knowledge no published adversarial benchmark scores attribution integrity for
+the sibling-impersonation case across a structured defense gradient; the problem
+space is \emph{defensibly underexplored} rather than untouched.
+
+% ===========================================================================
+\section{Threat Model}
+\label{sec:threat}
+% ===========================================================================
+
+\subsection{System under test}
+AEGIS-AT models a minimal SOC alert-triage pipeline (Figure~\ref{fig:arch}). A
+human analyst authenticates and issues a request to a triage orchestrator. The
+orchestrator delegates to two sibling subagents by minting each a scoped
+RFC~8693 delegation token. Both subagents can call one shared tool, \siem{},
+which records the identity of the calling agent in an action log.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{Human principal} (\code{human:analyst}) --- authenticates once,
+  originates the task, is the root of every delegation chain; does not call tools
+  directly.
+  \item \textbf{Orchestrator} --- a stateless RFC~8693 token-exchange endpoint. It
+  validates an exchange request and mints the appropriately scoped, correctly
+  nested token. It does \emph{not} read alert content to make routing decisions.
+  \item \textbf{Agent-Enrich} (Subagent~A) --- the lower-consequence sibling;
+  read-only context gathering under \code{siem:read}. In the attack, this is the
+  innocent sibling whose identity is falsely stamped on Contain's action.
+  \item \textbf{Agent-Contain} (Subagent~B) --- the higher-consequence sibling and
+  the true executor; consequential response actions under \code{siem:write}.
+  \item \textbf{Tool} \siem{} --- a single SOAR-style endpoint, scope-gated. The
+  \code{command} parameter selects the operation; the token's \code{scope} claim
+  decides whether the call is permitted. The tool reads agent identity
+  \emph{only} from the verified \code{act} claim, never a self-reported field.
+\end{itemize}
+
+This is deliberately the smallest configuration in which sibling impersonation is
+possible: two siblings (so impersonation has a target) and one shared tool (so
+the attack has exactly one degree of freedom --- A acted, the log says B). The
+privilege asymmetry between Contain and Enrich is what makes misattribution
+\emph{security-relevant} rather than cosmetic.
+
+\begin{figure}[h]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}r@{\quad}l@{}}
+\toprule
+\multicolumn{2}{@{}l}{\textbf{Step / actor}\hfill\textbf{What happens (and at which boundary)}}\\
+\midrule
+\code{human:analyst}     & issues the triage request \hfill \emph{(Boundary 1)} \\
+$\downarrow$             & orchestrator mints scoped RFC 8693 tokens \hfill \emph{(Boundary 2 --- attack)} \\
+\code{Agent-Enrich}      & (requester, \code{siem:read}) sends a re-delegation request \\
+$\downarrow$             & orchestrator mints a \code{siem:write} token \emph{naming Enrich} \\
+\code{Agent-Contain}     & (true executor) wields the token, calls \siem{} \hfill \emph{(Boundary 3: all checks pass)} \\
+$\downarrow$             & tool writes \code{claimed\_actor = enrich} \hfill \emph{(Boundary 4)} \\
+\code{Harness recorder}  & observes \code{true\_actor = contain}, out-of-band \hfill \emph{(Boundary 5)} \\
+\midrule
+\textbf{AIS scorer}      & \code{claimed} $\neq$ \code{true} $\Rightarrow$ attribution defect \\
+\bottomrule
+\end{tabular}
+\caption{The AEGIS-AT pipeline and its five trust boundaries. The attack lives at
+Boundary~2 (token minting); Boundaries~3 and 4 faithfully transcribe a record
+that is already wrong; Boundary~5 is the independent measurement instrument.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Trust boundaries}
+The system has five boundaries; naming all five lets a reviewer see that the
+attack lives at exactly one of them.
+\begin{description}[leftmargin=1.6em,style=nextline,itemsep=2pt]
+  \item[Boundary 1 (principal $\to$ orchestrator).] The analyst authenticates via
+  OIDC; their task prompt is trusted. \emph{But} the pipeline also ingests
+  upstream SIEM alert content, which is definitionally untrusted --- it describes
+  activity outside the perimeter and routinely carries attacker-controlled
+  strings. This is the attacker's sole injection point.
+  \item[Boundary 2 (orchestrator $\to$ subagent --- minting).] The attack
+  boundary. Cryptographic verification is sound (the signing key is out of
+  reach), but the \emph{decisional} content of the exchange request is shaped by
+  upstream, attacker-influenceable input. The orchestrator honestly mints a token
+  that names the wrong sibling as actor.
+  \item[Boundary 3 (subagent $\to$ tool).] The tool runs full verification ---
+  signature, expiry, chain integrity, scope gate, identity resolution --- and
+  \emph{every check passes}. It then faithfully records the current actor from the
+  verified \code{act} claim. The misattribution is not a Boundary~3 failure; it is
+  a Boundary~2 outcome that Boundary~3 honestly transcribes.
+  \item[Boundary 4 (tool $\to$ action log).] The claimed actor is written to the
+  log. The wrong actor arrived already wrong. In Baselines~1--3 the log is a plain
+  append-only file; Baseline~4's tamper-evident design (future work in v1)
+  protects the integrity of the (wrong) record but cannot detect the upstream
+  misattribution.
+  \item[Boundary 5 (system $\to$ harness --- ground-truth recorder).] The
+  measurement instrument, not a defense. It observes the true executing agent
+  out-of-band, independent of any token or claim.
+\end{description}
+
+\subsection{Adversary model}
+The adversary is modeled at the \emph{gray-box} level: they know the kind of
+system and the kind of decisions it makes, but not its exact prompts, extraction
+code, or scope strings. This matches every real-world precedent cited above.
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt]
+  \item \textbf{Can:} control the text of one or more SIEM alerts processed by
+  Enrich (hostnames, URLs, log lines, etc.); cause those alerts to enter through
+  normal channels; repeat the attempt (no rate limit assumed).
+  \item \textbf{Cannot:} compromise the analyst, SIEM, or upstream systems; forge
+  or modify tokens (the signing key is out of reach); read or write the
+  ground-truth recorder; compromise the orchestrator, subagents, or tool
+  \emph{as processes} --- only the data they consume.
+\end{itemize}
+\textbf{Goal:} cause an action truly performed by Agent-Contain to be attributed
+to Agent-Enrich, so that an analyst reviewing the log sees no record of the
+high-consequence agent having taken the high-consequence action. The attack is
+``covering tracks,'' not privilege escalation: the attacker hides \emph{who}
+exercised authority that already legitimately existed. Critically, the attack
+needs \emph{no} zero-day, no jailbreak, no instruction-override, no adversarial
+embedding --- only that a genuinely containment-warranting alert flow through the
+re-delegation path.
+
+% ===========================================================================
+\section{The Attribution Integrity Score}
+\label{sec:metric}
+% ===========================================================================
+
+\subsection{Ground-truth and claimed schemas}
+For each tool invocation the harness's ground-truth recorder writes a tuple
+\[
+\langle \texttt{true\_actor},\ \texttt{true\_scope},\
+\texttt{true\_principal\_chain},\ \texttt{command},\ \texttt{target},\
+\texttt{timestamp}\rangle,
+\]
+where \code{true\_actor} is the agent that actually executed the call (observed
+from the executing context, not any token); \code{true\_scope} is the scope the
+command genuinely requires (a static command$\to$scope map); and
+\code{true\_principal\_chain} is the ordered delegation path from immediate actor
+to human principal, $[\texttt{true\_actor},\ \texttt{human:analyst}]$ --- a
+two-hop chain. The orchestrator does \emph{not} appear in it: it is a stateless
+minting endpoint, not a delegated principal holding a token, so RFC~8693's
+\code{act} claim records no hop for it.\footnote{This two-hop shape is itself a
+finding in miniature. An earlier draft of the threat model recorded a three-hop
+chain $[\texttt{actor},\ \texttt{orchestrator},\ \texttt{analyst}]$ --- the
+natural practitioner intuition. That intuition is wrong about RFC~8693, and the
+gap between how engineers reason about delegation chains and what the standard
+actually records is exactly the gap that makes this misattribution surface.}
+
+The corresponding Boundary~4 record has the parallel shape with each
+\code{claimed\_*} field derived from the verified \code{act} claim of the
+presented token. Records are matched between the two stores by the
+$(\texttt{command}, \texttt{target}, \texttt{timestamp})$ triple.
+
+\subsection{The metric}
+For a single adversarial action $a$, define
+\[
+\textsf{is\_correct}(a) =
+\begin{cases}
+1 & \text{if } \texttt{claimed\_actor}(a) = \texttt{true\_actor}(a)\\
+  & \ \wedge\ \texttt{claimed\_scope}(a) = \texttt{true\_scope}(a)\\
+  & \ \wedge\ \texttt{claimed\_principal\_chain}(a) = \texttt{true\_principal\_chain}(a)\\
+0 & \text{otherwise.}
+\end{cases}
+\]
+Comparison is strict: all three fields must match. \code{principal\_chain}
+comparison is ordered-list equality (a permutation, missing hop, or inserted hop
+is a defect); where no delegation chain exists (opaque per-agent credentials at
+Baselines~1--2), the chain is \code{None} and matches \code{None}. The
+Attribution Integrity Score for a baseline $B$ is
+\[
+\ais(B) = \frac{1}{|A(B)|} \sum_{a \in A(B)} \textsf{is\_correct}(a),
+\]
+where $A(B)$ is the set of adversarial actions executed under $B$ --- tool calls
+the attack actually influenced. Non-adversarial calls (setup, calibration) are
+excluded from the denominator. \ais{} is reported \emph{per baseline}; the curve
+across baselines is the result.
+
+\subsection{Derived reporting}
+Two diagnostics travel with each \ais{}. The \textbf{defect breakdown} records,
+for each incorrect action, which of the three fields mismatched --- showing
+whether a baseline breaks attribution uniformly or concentrates on one field.
+The \textbf{hold rate} reports the marginal \ais{} change at each baseline
+transition ($1{\to}2$, $2{\to}3$, $3{\to}4$), isolating each defense layer's
+contribution.
+
+\subsection{Why the v1 measurement is categorical}
+The v1 attack is \emph{categorical, not stochastic}: under scripted deterministic
+agents the misattribution succeeds by construction on every adversarial action.
+The finding is therefore a curve \emph{shape}, not a frequency estimate.
+Confidence intervals are degenerate by design ($\ais{} \in \{0,1\}$ per
+baseline). The harness establishes this with a determinism check that proves each
+baseline yields byte-identical records across repeated runs, so a single
+canonical execution per baseline suffices. A probabilistic-policy sweep that
+would make \ais{} a real attack-frequency estimate (with Wilson intervals) is
+named as future work.
+
+% ===========================================================================
+\section{The Attack Mechanism}
+\label{sec:attack}
+% ===========================================================================
+
+\subsection{The structural property exploited}
+Under RFC~8693, when agent $X$ requests a delegated token to act on behalf of
+principal $P$, the resulting token's \code{act} claim records $X$ as the current
+actor. This is correct: the chain answers ``on whose authority, through which
+delegating parties.'' But an audit log is trusted to answer a subtly different
+question --- ``who \emph{performed} this action?'' In a single-agent setting the
+two coincide. In a multi-agent setting where one agent requests a delegated
+capability that \emph{another} agent executes, they diverge, and the divergence
+is invisible to every cryptographic check because nothing was forged or
+malformed.
+
+\subsection{Token structure under Baselines 3--4}
+When the orchestrator performs the re-delegation exchange, the issued token
+follows RFC~8693~\S4.1 delegation semantics:
+\begin{lstlisting}
+sub:   "human:analyst"        <- principal (on whose behalf)
+scope: "siem:write"
+act: {
+  sub: "agent:enrich"         <- current actor (requester / named wielder)
+}
+\end{lstlisting}
+The chain is two hops: current actor (\code{agent:enrich}) and root principal
+(\code{human:analyst}). Two properties are decisive, both following directly from
+\S4.1: (i)~the current actor is the \emph{requester}, not the executor; and
+(ii)~the executing agent (\code{agent:contain}) \emph{does not appear in the
+token at all}. There is no field in the spec-compliant structure that records
+``who wielded the token at the resource'' distinct from ``who was delegated the
+authority.'' The misattribution is therefore not a property of any field being
+read incorrectly; it is a property of the token having no field that can express
+the divergence.
+
+\subsection{The attack, step by step}
+The attacker's only capability is to control the content of an alert Enrich
+processes. The attack does not require fooling Enrich, embedding instructions, or
+causing any component to misbehave --- only that a genuinely
+containment-warranting alert flow through the Enrich~$\to$~re-delegation path.
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+  \item The alert legitimately contains containment-warranting indicators (the
+  attacker shaped them, but they are \emph{real} indicators). Enrich is not
+  deceived; it makes the right call.
+  \item Enrich correctly initiates a re-delegation request for a containment
+  action, presenting its own token as the \code{actor\_token}.
+  \item The orchestrator correctly mints a \code{siem:write} token whose
+  \code{act} chain names Enrich (the requester).
+  \item Agent-Contain --- the agent that actually holds and runs the containment
+  capability --- wields the token and calls \siem{}.
+  \item The tool verifies the token (every Boundary~3 check passes), reads the
+  current actor (\code{enrich}), and records $\texttt{claimed\_actor} =
+  \texttt{enrich}$.
+  \item The ground-truth recorder observes $\texttt{true\_actor} =
+  \texttt{contain}$.
+  \item The scorer flags an actor mismatch: claimed Enrich, true Contain.
+  Attribution has failed.
+\end{enumerate}
+An analyst reviewing the log sees the high-consequence containment attributed to
+the read-only enrichment agent; the true executor appears nowhere in the record.
+
+\subsection{Why it survives every objection}
+\textbf{``The orchestrator has a bug.''} No --- it validated cryptographically and
+built the chain from the presented \code{actor\_token}, exactly as \S4.1
+specifies. \textbf{``Enrich was prompt-injected.''} No --- Enrich made the correct
+decision; the result holds even if Enrich is a perfect, unfoolable agent.
+\textbf{``The tool skipped a check.''} No --- every check passed; the tool
+faithfully recorded the current actor. \textbf{``You didn't sanitize alert
+text.''} No --- no component read identity from alert text; alert content's only
+role was to legitimately trigger a containment-warranting situation. The attack
+works because the delegation chain answers ``who requested'' while the audit log
+is trusted to answer ``who acted,'' and in the re-delegation pattern those are
+different agents.
+
+% ===========================================================================
+\section{Defense Baselines}
+\label{sec:baselines}
+% ===========================================================================
+
+The benchmark measures \ais{} across four configurations, applied as config flags
+over one codebase (not four implementations). Each adds one layer to the
+previous; \emph{only the credential differs}. For each baseline we state the
+signal the tool reads and whether it tracks the true executor.
+
+\begin{description}[leftmargin=1.6em,style=nextline,itemsep=3pt]
+  \item[Baseline 1 --- Shared service account.] All agents share one credential.
+  The tool cannot distinguish callers; attribution is \emph{undefined} (not wrong
+  about a specific sibling --- there is no per-agent identity to be right about).
+  Predicted $\ais{} \approx 0.0$. This is the common-but-wrong status quo (shared
+  API keys).
+  \item[Baseline 2 --- Per-agent identity.] Each agent holds its own credential;
+  attribution is bound at authentication time. Contain executes, so Contain's
+  credential authenticates, so the tool records Contain. \emph{Claimed actor =
+  true actor.} Predicted $\ais{} \approx 1.0$. Attribution is correct not by
+  design sophistication but because here the \emph{executor is the
+  authenticator}.
+  \item[Baseline 3 --- + RFC 8693 delegation.] The tool now resolves the claimed
+  actor from the delegation chain's current actor (\actsub{}~$=$~Enrich, the
+  requester), as \S4.1 mandates for the access-control decision. Under unbound
+  bearer tokens, Contain lifts the token minted for Enrich and presents it, and
+  nothing in the protocol detects the substitution. Predicted $\ais{} \approx
+  0.0$. This is the central result: signed delegation \emph{regresses}
+  attribution relative to per-agent identity, by following the standard
+  correctly.
+  \item[Baseline 4 --- + tamper-evident log.] Same signal as B3. Tamper-evidence
+  protects the integrity of the recorded entry but does not change \emph{what} is
+  recorded; the wrong actor was committed upstream at mint time. Predicted
+  $\ais{} \approx 0.0$, unchanged from B3. (In v1 this module is not built ---
+  B4's attribution equals B3 by construction; a real hash-chained log, which
+  tests log \emph{integrity}, a separate metric, is future work.)
+\end{description}
+
+The two ingredients of the regression are neither sufficient alone: (i)~unbound
+bearer tokens carrying a current-actor claim (RFC~8693 inherits OAuth~2.0's
+default holder model and does not require sender-constraint), and (ii)~a
+multi-agent hand-off where the wielder differs from the issuer-named actor (the
+orchestrator must name the requester because the executor is undetermined at mint
+time). \S4.1's \code{MUST} is scoped to access control and is silent on audit; a
+realistic implementation reuses the access-control identity for the audit record,
+and that identity is necessarily the named requester.
+
+% ===========================================================================
+\section{Implementation}
+\label{sec:impl}
+% ===========================================================================
+
+The system is implemented in Python ($\sim$6 core modules), using PyJWT for
+RS256-signed tokens and the \code{cryptography} library for key generation. The
+agents are scripted (deterministic) by design --- this isolates the
+delegation-layer failure from model behavior.
+
+\begin{description}[leftmargin=1.6em,style=nextline,itemsep=2pt]
+  \item[\code{auth/tokens.py}] Mints and verifies RFC~8693 tokens by hand:
+  \code{mint\_initial\_token}, \code{exchange\_token} (nests \code{act}, narrows
+  scope, refuses to widen), \code{verify\_token}, and \code{actor\_chain}, which
+  returns the path \emph{current-actor-first, root-principal-last}. Identity
+  resolution reads \code{chain[0]} --- the current actor (\S4.1), never the
+  innermost subject (the root principal).
+  \item[\code{policy/scope\_map.py}] The shared command$\to$scope contract
+  (\code{keyword\_search}~$\to$~\code{siem:read}, \code{isolate\_host}~$\to$~%
+  \code{siem:write}). Imported by both the tool and the recorder so they cannot
+  drift. Unknown commands raise --- a fail-loud policy error, not a default.
+  \item[\code{tools/siem\_action.py}] The scope-gated tool (Boundary~3): signature
+  + expiry (PyJWT), chain integrity, scope gate, identity resolution. For opaque
+  per-agent credentials (Baselines~1--2) it reads the authenticating agent and
+  sets \code{principal\_chain}~$=$~\code{None}; for JWTs (Baselines~3--4) it takes
+  the \code{act}-claim path. Discrimination is on credential \emph{structure}
+  only.
+  \item[\code{orchestrator/orchestrator.py}] A thin RFC~8693 validator/minter
+  (Boundary~2). The only validation it adds beyond \code{exchange\_token} is that
+  the \code{sub} must name a human principal. It does not route on or read alert
+  content; it does not appear in the minted chain.
+  \item[\code{harness/recorder.py}] The independent ground-truth recorder
+  (Boundary~5); see \S\ref{sec:recorder}.
+  \item[\code{harness/scorer.py}] The \ais{} metric, defect breakdown, and Wilson
+  CI; plus \code{is\_non\_monotonic(curve)}, the named predicate that pins the
+  \S\ref{sec:baselines} headline claim in one place.
+  \item[\code{harness/sweep.py}] The baseline switch: \code{run(baseline)} mints
+  the per-baseline credential (the only thing that varies), runs the canonical
+  attack once on a thread named for the true executor, and scores it;
+  \code{verify\_deterministic} and \code{emit\_curve} compose it.
+\end{description}
+
+\subsection{The independent ground-truth recorder}
+\label{sec:recorder}
+The recorder wraps \siem{} and observes the calling thread's name as
+\code{true\_actor} \emph{before} forwarding the call. Its independence rests on
+three axes: a \textbf{process boundary} (it runs in the harness, distinct from
+the agent contexts the attacker influences); \textbf{credential isolation} (no
+in-system component holds ground-truth write credentials); and \textbf{causal
+precedence} (it records before the tool's verification logic runs). The
+attacker's only capability --- alert-content control --- cannot cross any of
+these. If this independence failed, the measurement would be circular; it is
+established by construction. A v1 honesty note: the recorder uses Python's
+\code{threading.current\_thread().name} as a proxy for OS process identity; a
+true process boundary via \code{multiprocessing}/\code{os.getpid()} is v2
+hardening. Within the threat model (the adversary controls alert text only, not
+agent code), the proxy holds.
+
+% ===========================================================================
+\section{Experimental Methodology}
+\label{sec:method}
+% ===========================================================================
+
+\paragraph{Pre-registration.} Every \ais{} value (B1~$\approx$~0, B2~$\approx$~1.0,
+B3~$\approx$~0, B4~$\approx$~0) was committed in the threat model \emph{before}
+the attack code was written. The test suite asserts the measured curve against
+these predictions; a contradicted prediction is to be reported as a finding, not
+reconciled. This is the structural difference between a benchmark and a demo.
+
+\paragraph{Determinism as a checked property.}
+\code{verify\_deterministic(baseline, k)} runs each baseline $k=5$ times under a
+fixed clock and asserts byte-identical \code{(claimed, truth)} records, raising
+on the first divergent field. \code{emit\_curve} gates on this check before
+emitting any \ais{} value, so the curve is only produced once determinism is
+proven rather than asserted. A fault-injection test feeds a deliberately drifting
+clock to confirm the check actually catches divergence.
+
+\paragraph{Comparability by construction.}
+Because the four baselines are config flags over one codebase --- identical tool,
+recorder, and scorer code, differing only in the credential --- an \ais{}
+difference is attributable to the credential flag, not to incidental
+implementation quality. This is what makes the four numbers a curve rather than
+four anecdotes.
+
+\paragraph{Reproduction.}
+\begin{lstlisting}
+pip install -r aegis-at/requirements.txt
+pytest tests/core -v          # 59 tests
+bash scripts/check.sh         # lint, format, invariant greps, test gate
+\end{lstlisting}
+The full pipeline reproduces in seconds.
+
+% ===========================================================================
+\section{Results}
+\label{sec:results}
+% ===========================================================================
+
+\subsection{The curve}
+The measured curve reproduces the pre-registered prediction exactly
+(Table~\ref{tab:results}). \code{is\_non\_monotonic(curve)} returns \code{True}:
+$B2 > B1$, $B2 > B3$, and $B4 = B3$ (byte-identical, since B4 runs B3's code
+path in v1).
+
+\begin{table}[h]
+\centering
+\caption{Measured \ais{} with defect breakdown. Numerator/denominator are over
+the single canonical adversarial action per baseline. The defect breakdown names
+the claimed vs.\ true actor and which fields mismatched.}
+\label{tab:results}
+\begin{tabular}{clcccl}
+\toprule
+\textbf{B} & \textbf{Defense} & \textbf{\ais{}} & \textbf{num/den} &
+\textbf{Predicted} & \textbf{Defect (claimed $\to$ true)} \\
+\midrule
+B1 & Shared account     & 0.0 & 0/1 & $\approx 0$   & actor: \code{svc:soar} $\to$ \code{agent:contain} \\
+B2 & Per-agent identity & 1.0 & 1/1 & $\approx 1.0$ & --- (perfect) \\
+B3 & + RFC 8693 deleg.  & 0.0 & 0/1 & $\approx 0$   & actor + chain: \code{agent:enrich} $\to$ \code{agent:contain} \\
+B4 & + tamper-evident   & 0.0 & 0/1 & $\approx 0$   & actor + chain: \code{agent:enrich} $\to$ \code{agent:contain} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reading the defect breakdown}
+The defect breakdown is the cleanest evidence of the mechanism. At B3 and B4 the
+system claims \code{agent:enrich} (the requester named in \actsub{}) while the
+true executor is \code{agent:contain}. The defect flags the \code{actor}
+\emph{and} \code{principal\_chain} fields together --- never \code{scope}. This
+confirms a property predicted in the threat model: the actor and principal-chain
+defects are \emph{correlated}, because both flag precisely when Enrich occupies
+the current-actor position. The correlation is a true property of the attack, not
+a metric artifact. At B1 the single defect is on \code{actor} alone
+(\code{svc:soar} vs.\ \code{contain}), with \code{principal\_chain}~$=$~\code{None}
+on both sides (no chain pre-delegation) --- the ``undefined attribution'' case.
+
+\subsection{Test and gate status}
+The full suite is \textbf{59 tests, all passing}; the mechanical gate
+(\code{scripts/check.sh}) exits~0, enforcing the greppable invariants (the tool
+is named \siem{} everywhere; identity resolves to the most-recent actor, never
+the ``innermost'' subject), lint (ruff), and format (black). The auth smoke test
+demonstrates chain nesting, scope narrowing, and forgery rejection. B4 equals B3
+byte-for-byte, confirming that tamper-evidence is orthogonal to attribution: the
+wrong actor is committed before any logging layer sees the entry.
+
+% ===========================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ===========================================================================
+
+\paragraph{This is not a logic bug a careful engineer would fix.}
+The honest defense is topological, not ``the spec forces it.'' The fix a reviewer
+reaches for is ``name the wielder, not the requester.'' But in the realistic
+topology, the orchestrator mints the delegated token and hands it downstream,
+where routing decides which sibling executes; the wielder is \emph{not determined
+at mint time}, so the orchestrator cannot place it in the current-actor claim.
+Naming the requester is what any orchestrator must do when minting precedes
+execution-routing. Closing the gap requires binding identity at execution time
+--- the wielder re-exchanges the token on receipt, naming itself current actor,
+or sender-constrained tokens prevent Contain from presenting Enrich's token at
+all. Both are exactly the execution-identity binding we name as future work
+(\S\ref{sec:future}). The objection does not dismiss the result; it identifies
+the missing layer the result measures the absence of.
+
+\paragraph{The gap is structural, not merely adversarial.}
+The misattribution is a \emph{latent property of the re-delegation pattern}: any
+containment action re-delegated through Enrich produces the same wrong-actor
+record, attack or no attack. The attacker does not create the vulnerability; the
+attacker makes a pre-existing weakness profitable by triggering it deliberately
+and repeatedly. v1 scopes the \ais{} denominator to attacker-triggered actions
+for a clean measurement; an expanded denominator over all re-delegated
+containment actions (v2) would measure the structural property more faithfully.
+
+\paragraph{Tamper-evident logging protects a wrong answer.}
+Baseline~4 underperforms a naive expectation, and this is the point: the second
+primitive standards bodies emphasize for non-repudiation cannot recover correct
+attribution, because the misattribution is established \emph{before} logging. It
+cryptographically preserves the wrong record. Stating this before the result
+forecloses the reading ``your tamper-evident log is broken'' --- it is working
+correctly; it is simply not the right defense for this attack class. That
+negative result is part of the contribution.
+
+% ===========================================================================
+\section{Limitations and Validity Threats}
+\label{sec:validity}
+% ===========================================================================
+
+We list the ways the result could be wrong or unconvincing and the mitigation for
+each. The first is a genuine limitation we concede rather than defeat.
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+  \item \textbf{Generalization ($n=1$) --- conceded.} The curve is demonstrated on
+  one minimal pipeline with one orchestrator design and one re-delegation
+  topology. v1 establishes the gap \emph{exists}, is triggerable by a realistic
+  gray-box adversary, and survives the two emphasized defenses --- \emph{in this
+  system}. What makes it meaningful despite $n=1$ is \emph{why} it appears: it
+  follows from \S4.1 scoping its \code{MUST} to access control (reused for audit)
+  plus the standard's implicit assumption that the current actor and executor
+  coincide. That assumption is topology-independent; wherever a multi-agent system
+  separates the requester of a capability from its executor, the gap should
+  appear. Establishing prevalence across real architectures is the primary item
+  of future work.
+  \item \textbf{``The system is a toy.''} Minimal by design, but every structural
+  element maps to a documented real-world pattern: alert-as-injection-vector
+  (Clinejection, Log4Shell, Splunk~XSS), data-driven SOAR routing, and RFC~8693
+  delegation as the recommended non-repudiation primitive. Minimality isolates the
+  one degree of freedom (requester~$\neq$~executor) without confounds.
+  \item \textbf{``Ground truth isn't independent of the log.''} Independence is
+  established by construction along three axes (\S\ref{sec:recorder}); the
+  attacker's only capability cannot cross any of them. Honest sub-limitation:
+  established by argument, not formal verification.
+  \item \textbf{``Baselines aren't a fair comparison.''} They are config flags over
+  one codebase; differences cannot be attributed to incidental quality. The most
+  attackable point --- B2 reaching $\approx$~1.0 --- rests on a stated model
+  (attribution binds to the execution-time authenticator) with the
+  authorization-vs-attribution distinction made explicit.
+  \item \textbf{``Scripted, not real LLM behavior.''} Deliberate: the attack is
+  designed to be independent of agent reasoning quality (Enrich's escalation is
+  the \emph{correct} response to a genuinely warranting alert), removing
+  model-specific confounds. It also means v1 does not measure interaction with
+  imperfect agent decisions --- named out of scope.
+  \item \textbf{Thread proxy for process identity.} The recorder uses
+  \code{threading.current\_thread().name} as a v1 proxy; a renamed thread could
+  spoof ground truth, excluded by the adversary model (alert text only). v2 uses
+  \code{multiprocessing}/\code{os.getpid()}.
+  \item \textbf{Baseline 4 is attribution-only in v1.} B4's attribution equals B3
+  by construction; a real hash-chained tamper-evident log (testing log
+  \emph{integrity}, a separate metric) is future work.
+\end{enumerate}
+
+% ===========================================================================
+\section{Future Work}
+\label{sec:future}
+% ===========================================================================
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{Baseline 5 --- sender-constrained tokens.} The gap requires unbound
+  bearer tokens. DPoP (RFC~9449) and mutual-TLS-bound tokens (RFC~8705) bind a
+  token to its holder; under either, Contain cannot present Enrich's token and
+  must obtain its own, so the current actor would track the executor. Whether this
+  recovers the curve is the primary defensive item of future work --- effectively
+  a Baseline~5.
+  \item \textbf{Prevalence across topologies.} Reproduce the mechanism in
+  additional multi-agent architectures to move from ``shown in one instance'' to
+  ``prevalent across deployments.''
+  \item \textbf{Stochastic policy / expanded denominator.} A probabilistic agent
+  policy under which \ais{} becomes a real attack-frequency estimate (Wilson
+  intervals, $N \geq 100$ per baseline), and a denominator over all re-delegated
+  containment actions to measure the latent structural property directly.
+  \item \textbf{Tamper-evident log integrity.} Implement the hash-chained, signed
+  log to measure log \emph{integrity} as a metric distinct from attribution.
+  \item \textbf{Other sibling-impersonation variants.} Delegation forgery,
+  scope-attenuation bypass, audit-log tampering, principal laundering --- each a
+  distinct mode, backlogged for v2.
+\end{itemize}
+
+% ===========================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ===========================================================================
+
+Adding the industry-standard delegation mechanism to a correctly-functioning
+multi-agent system can make audit attribution \emph{worse}, not better. AEGIS-AT
+measures this as a non-monotonic Attribution Integrity curve: perfect under
+per-agent identity, zero once RFC~8693 delegation is added, still zero with
+tamper-evident logging. The cause is structural --- RFC~8693's current actor names
+the requester, the executor can differ, and the standard has no field for the
+executor --- so the result is not a bug to be patched but a missing layer to be
+added: execution-identity binding via sender-constrained tokens. The benchmark is
+small, deterministic, pre-registered, and reproducible; its value is in the
+trustworthiness of the measurement, not the breadth of coverage. As standards
+bodies move to make RFC~8693 the backbone of AI agent non-repudiation, AEGIS-AT
+is a concrete, falsifiable warning that delegation alone does not buy
+accountability in the multi-agent case --- and a precise statement of what does.
+
+% ===========================================================================
+\section*{Reproducibility and Artifact Availability}
+\addcontentsline{toc}{section}{Reproducibility and Artifact Availability}
+% ===========================================================================
+The complete benchmark --- threat model, six core modules, harness, and 59 tests
+--- is released. Code (\code{aegis-at/}, \code{tests/}, \code{scripts/}) is
+licensed Apache-2.0; documentation (\code{Documents/}) is licensed CC~BY~4.0.
+Every \ais{} value is asserted in the test suite against the curve predicted in
+the threat model before the attack code was written. The pipeline reproduces in
+seconds via \code{pytest tests/core} and \code{bash scripts/check.sh}.
+
+% ===========================================================================
+\begin{thebibliography}{99}
+\addcontentsline{toc}{section}{References}
+
+\bibitem{rfc8693} M.~Jones, A.~Nadalin, B.~Campbell, J.~Bradley, and C.~Mortimore,
+\emph{OAuth 2.0 Token Exchange}, RFC~8693, IETF, January 2020.
+\url{https://www.rfc-editor.org/rfc/rfc8693}.
+
+\bibitem{rfc9449} D.~Fett, B.~Campbell, J.~Bradley, T.~Lodderstedt, M.~Jones, and
+D.~Waite, \emph{OAuth 2.0 Demonstrating Proof of Possession (DPoP)}, RFC~9449,
+IETF, September 2023. \url{https://www.rfc-editor.org/rfc/rfc9449}.
+
+\bibitem{rfc8705} B.~Campbell, J.~Bradley, N.~Sakimura, and T.~Lodderstedt,
+\emph{OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access
+Tokens}, RFC~8705, IETF, February 2020.
+\url{https://www.rfc-editor.org/rfc/rfc8705}.
+
+\bibitem{nist2026} H.~Booth, W.~Fisher, R.~Galluzzo, and J.~Roberts,
+\emph{Accelerating the Adoption of Software and Artificial Intelligence Agent
+Identity and Authorization}, NIST NCCoE Concept Paper (Initial Public Draft),
+February~5, 2026.
+\url{https://www.nccoe.nist.gov/publications/other/accelerating-adoption-software-and-ai-agent-identity-and-authorization-concept}.
+
+\bibitem{openid2026} OpenID Foundation, \emph{OIDF Responds to NIST on AI Agent
+Security}, March~11, 2026.
+\url{https://openid.net/oidf-responds-to-nist-on-ai-agent-security/}.
+
+\bibitem{csa2026} Cloud Security Alliance AI Safety Initiative, \emph{Confused
+Deputy Attacks on Autonomous AI Agents} (Research Note), March~23, 2026.
+\url{https://labs.cloudsecurityalliance.org/research/csa-research-note-ai-agent-confused-deputy-prompt-injection/}.
+
+\bibitem{haid} Foundation for American Innovation, \emph{Human-Anchored
+Intent-Bound Delegation (HAID) for AI Agents}, submitted to NIST, April~2, 2026.
+\url{https://www.thefai.org/posts/human-anchored-intent-bound-delegation-for-ai-agents}.
+
+\bibitem{clinejection} Snyk, \emph{How ``Clinejection'' Turned an AI Bot into a
+Supply Chain Attack}, February 2026.
+\url{https://snyk.io/blog/cline-supply-chain-attack-prompt-injection-github-actions/}.
+
+\bibitem{salesloft} Google Threat Intelligence Group, \emph{Data Theft from
+Salesforce Instances via the Salesloft Drift Integration (UNC6395)}, August 2025.
+\url{https://cloud.google.com/blog/topics/threat-intelligence/data-theft-salesforce-instances-via-salesloft-drift}.
+
+\bibitem{misattribution} T.~Ahad, I.~Hossain, M.~J.~Alam, S.~Puppala,
+S.~B.~Alam, and S.~Talukder, \emph{The Misattribution Gap: When Memory Poisoning
+Looks Like Model Failure in Agentic AI Systems}, arXiv:2605.22842, May 2026.
+\url{https://arxiv.org/abs/2605.22842}.
+
+\bibitem{hardy1988} N.~Hardy, \emph{The Confused Deputy (or why capabilities might
+have been invented)}, ACM SIGOPS Operating Systems Review, 22(4), 1988.
+
+\end{thebibliography}
+
+\end{document}

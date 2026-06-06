@@ -27,14 +27,14 @@ triggered by the content of *Enrich's output*, not by raw attacker text —
 i.e., the injection is indirect. This matches the Cline pattern: the triage
 bot read the issue title; the attacker never spoke to the bot directly.
 
-## §9 hook (validity-threats section)
+## §8 hook (validity-threats section)
 
 A reviewer may ask whether "alert text reaches Enrich" is a realistic
 attacker capability. Answer with the precedent stack already in Boundary 1
 (Cline, Log4Shell, Splunk XSS, ELK injection, Hardy 1988). Do not re-argue
-realism in §9; reference Boundary 1.
+  realism in §8; reference Boundary 1.
 
-A separate §9 limitation is needed for the analyst-prompt path being out of
+A separate §8 limitation is needed for the analyst-prompt path being out of
 scope. Draft text:
 "We model the attacker as controlling alert content ingested by the Enrich
 agent. An alternative injection path — a malicious or socially engineered
@@ -47,4 +47,4 @@ Measuring delegation resilience to insider-threat injection is future work."
 - Boundary 5 (tool → ground-truth recorder): need to specify *how* ground
   truth stays independent of the attacker. Likely answer: recorder writes
   from inside the tool's process before the agent's logic runs, separate
-  credentials. Defer to §4 (ground-truth definition) and §9 (validity).
+credentials. Defer to §4 (ground-truth definition) and §8 (validity).

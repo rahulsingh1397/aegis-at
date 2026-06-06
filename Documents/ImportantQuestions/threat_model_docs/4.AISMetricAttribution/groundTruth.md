@@ -49,7 +49,7 @@ Defect-breakdown reporting in §6/§7 should highlight which
 fields drop under attack at each baseline. This is the
 empirical story of the result.
 
-## §9 hook — validity threats to the metric itself
+## §8 hook — validity threats to the metric itself
 
 A reviewer may ask:
   (a) "Why strict match? Why not partial credit?"

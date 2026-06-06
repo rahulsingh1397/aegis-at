@@ -40,13 +40,13 @@ Enrich → re-delegation path triggered by attacker-shaped alert
 content. Only these count in the AIS denominator. Confirmed
 consistent with §4's per-adversarial-action denominator.
 
-## §9 hooks
+## §8 hooks
 
 - Latent gap framing: the misattribution also occurs in normal
   operation (whenever containment is re-delegated through
   Enrich). v1 measures the adversarially-triggered case; the
   normal-operation occurrence STRENGTHENS the finding
-  (structural, not merely adversarial). Develop in §9.
+(structural, not merely adversarial). Develop in §8.
 - Validity threat: "isn't this just how RFC 8693 is supposed
   to work?" Answer: yes — and that's the point. The standard's
   semantics are sound for delegation but insufficient for

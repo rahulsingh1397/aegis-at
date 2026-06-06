@@ -26,12 +26,12 @@ where Enrich — not the orchestrator — reads alert content and decides
 to escalate. See the "§5 alignment note" below for the resolved
 chain of influence.
 
-## §9 hook — validity-threat the reviewer will raise
+## §8 hook — validity-threat the reviewer will raise
 
 A reviewer will ask: "If your cryptography is sound, isn't your attack
 just a logic bug? Wouldn't a careful orchestrator implementation fix it?"
 
-Pre-empt this in §9 with three points:
+Pre-empt this in §8 with three points:
   1. The confused-deputy lineage (Hardy, 1988) shows this class of
      bug is architectural, not implementation-specific. Any orchestrator
      that takes adversarial input and makes identity-affecting decisions
