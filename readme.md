@@ -1,244 +1,320 @@
-# AEGIS-AT — Attribution Integrity Benchmark
+<div align="center">
 
-**Adding the industry-standard delegation mechanism to a correctly-functioning
-multi-agent AI system makes audit attribution *worse*, not better.**
+# Rahul Singh
 
-AEGIS-AT is a red-team benchmark that measures whether delegation-chain
-attribution survives a realistic sibling-impersonation attack in a multi-agent
-system. It implements a minimal Security Operations Center (SOC) pipeline — two
-agents sharing one tool — and measures an **Attribution Integrity Score (AIS)**
-across four progressive defense baselines.
+### AI/ML Engineer · AI Safety & Agent Security · Graph Neural Networks · Production ML
 
-The headline result is a **non-monotonic curve**: attribution is perfect under
-simple per-agent identity, then *regresses to completely wrong* the moment you
-add RFC 8693 delegation — the mechanism standards bodies recommend for
-multi-agent non-repudiation. Tamper-evident logging does not recover it.
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=00F5D4&center=true&vCenter=true&width=900&lines=At+the+Intersection+of+AI%2FML+and+AI+Safety;Multi-Agent+Security+%7C+Attribution+%7C+Non-Repudiation;Graph+Neural+Networks+%7C+Heterogeneous+Graphs;LLM+Pipelines+%7C+RAG+%7C+Agentic+Systems;Evaluation+Frameworks+%7C+Research+Rigour" />
 
----
+<br/>
 
-## The finding
+<a href="https://rahulaiportfolio.netlify.app/">
+  <img src="https://img.shields.io/badge/🌐_Portfolio-rahulaiportfolio.netlify.app-00F5D4?style=for-the-badge" />
+</a>
+<a href="mailto:rahul.rs1397@gmail.com">
+  <img src="https://img.shields.io/badge/📩_Email-Contact-D14836?style=for-the-badge&logo=gmail&logoColor=white" />
+</a>
+<a href="https://linkedin.com/in/rahulsingh1397">
+  <img src="https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" />
+</a>
+<a href="https://github.com/sponsors/rahulsingh1397">
+  <img src="https://img.shields.io/badge/❤️_Sponsor-Fund_My_Work-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" />
+</a>
 
-| Baseline | Defense in place                          | AIS  |
-| :------: | :---------------------------------------- | :--: |
-|   B1     | Shared service account                    | 0.0  |
-|   B2     | Per-agent identity                        | 1.0  |
-|   B3     | + RFC 8693 delegation                     | 0.0  |
-|   B4     | + tamper-evident log                      | 0.0  |
+<br/>
 
-The curve rises to perfect attribution at **B2**, then **regresses to zero at
-B3** when signed delegation is added, and **stays at zero at B4** — tamper-evident
-logging cannot recover what was already mis-recorded at mint time. Adding two of
-the primitives most emphasized for agent non-repudiation makes attribution worse,
-not better.
+![Profile Views](https://komarev.com/ghpvc/?username=rahulsingh1397&color=00F5D4&style=for-the-badge&label=PROFILE+VIEWS)
 
-**Why it regresses — the structural mechanism (not a bug):**
-RFC 8693's "current actor" (`act.sub`) is the party that *requested* the
-delegated authority. In a multi-agent hand-off, the agent that *executes* the
-action can differ from the one named in the token — and the standard provides no
-field that records the executor. §4.1's `MUST` is scoped to the **access-control
-decision**, not to audit logging; combined with unbound bearer tokens (RFC 8693
-inherits OAuth 2.0's default holder model) and a mint-before-execution topology,
-the realistic implementation logs the *requester*. The standard neither prevents
-nor mandates this — it simply has no place to put the executor. The fix is
-execution-identity binding (sender-constrained tokens, **DPoP / RFC 9449** or
-**mTLS / RFC 8705**), named as future work and not implemented in v1.
+</div>
 
 ---
 
-## Why it matters
+## What I Build
 
-Picture a hospital's automated security response. A low-privilege triage agent
-reads an alert and escalates; a high-privilege containment agent quarantines a
-machine — say, a device on a patient-monitoring network. Afterward, the audit
-log needs to answer one question: *which agent took the high-consequence action?*
+<img align="right" src="https://media.giphy.com/media/077i6AULCXc0FKTj9s/giphy.gif" width="180" />
 
-Under standard delegation, the log names the agent that **requested** the
-containment, not the one that **executed** it. If an attacker can shape the alert
-that triggers the chain, they can cause a high-privilege action to be taken and
-attributed to the wrong, lower-privilege agent — covering the real executor's
-tracks while looking fully spec-compliant. The accountability the standard was
-adopted to provide is exactly what fails.
+I work at the intersection of AI/ML engineering and AI safety research — building
+production-grade systems *and* the adversarial benchmarks that test whether they
+actually hold up. My work spans cybersecurity, healthcare, and enterprise AI: from
+heterogeneous graph neural networks, to retrieval-augmented LLM systems, to
+red-team benchmarks for multi-agent agent security.
 
-The standards landscape is actively asking for exactly this measurement. NIST's
-NCCoE concept paper (*Accelerating the Adoption of Software and AI Agent Identity
-and Authorization*, Feb 2026) names auditing and non-repudiation of AI agent
-actions as an open problem and asks how existing identity standards — OAuth, RFC
-8693 — should apply to multi-agent delegation. The confused-deputy gap has also
-shown up in production: the "Clinejection" incident (Feb 2026) used a crafted
-GitHub issue title to drive a privileged AI agent into a supply-chain compromise
-of ~4,000 developer machines — attacker-controlled input steering a privileged
-agent through a confused-deputy chain.
+My work focuses on the full ML lifecycle:
+- architecture design
+- model training
+- evaluation methodology
+- deployment infrastructure
+- operational monitoring
+- continuous improvement
 
-AEGIS-AT doesn't restage Clinejection; it measures the attribution question one
-layer down — *when a privileged action is taken through delegation, does the
-audit record name the agent that executed it?* No published adversarial benchmark
-answers that for the sibling-impersonation case across a structured defense
-gradient; this is one. (The closest prior work, *The Misattribution Gap*, measures
-model-vs-memory misattribution — adjacent, not the same layer.)
+I specialize in:
+- **AI Safety & Agent Security** — attribution integrity, non-repudiation, adversarial evaluation of multi-agent systems
+- **Graph ML** — heterogeneous GNNs, clustering systems, anomaly detection
+- **LLM Systems** — RAG pipelines, ReAct agents, evaluation harnesses
+- **Production Engineering** — FastAPI, Docker, Kubernetes, CI/CD
+
+<br clear="right"/>
 
 ---
 
-## What AEGIS-AT is
+## Technical Stack
 
-A deliberately minimal system, built so the causal chain is clean and the
-measurement is defensible:
+**AI Safety / Security**
 
-- **Two agents, one tool.** `Agent-Enrich` (low-privilege, read-only) and
-  `Agent-Contain` (high-privilege, can execute `isolate_host`) share a single
-  scope-gated SOAR tool, `siem_action`.
-- **One attack.** A containment-warranting alert — with attacker-controlled
-  text — flows through Enrich; Enrich correctly escalates; the orchestrator
-  honestly mints a delegation token naming Enrich (the requester); Contain (the
-  executor) wields it. The log names Enrich.
-- **Four baselines, one codebase.** Baselines are configuration flags over
-  identical tool / recorder / scorer code — only the credential differs. This is
-  what makes the four AIS values comparable rather than apples-to-oranges.
-- **An independent ground-truth recorder.** A harness component observes the
-  *true* executing agent out-of-band (from the execution thread, never from the
-  token), so the score compares what the system *claims* against what *actually
-  happened*.
-- **A strict metric.** AIS is the fraction of adversarial actions whose claimed
-  `(actor, scope, principal_chain)` exactly matches ground truth. The scorer also
-  reports *which* field broke, so the failure can be diagnosed, not just counted.
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![RFC 8693 / OAuth](https://img.shields.io/badge/RFC_8693_/_OAuth-2C2255?style=flat-square&logo=auth0&logoColor=white)
+![PyJWT](https://img.shields.io/badge/PyJWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white)
+![Threat Modeling](https://img.shields.io/badge/Threat_Modeling-8A1538?style=flat-square&logo=hackthebox&logoColor=white)
 
----
+**Graph ML**
 
-## Status
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
+![PyG](https://img.shields.io/badge/PyTorch_Geometric-3C2179?style=flat-square&logo=pytorch&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-013243?style=flat-square&logo=numpy&logoColor=white)
+![HDBSCAN](https://img.shields.io/badge/HDBSCAN-1D9E75?style=flat-square&logoColor=white)
 
-| Layer            | Artifacts                                                                 | State |
-| :--------------- | :------------------------------------------------------------------------ | :---- |
-| Threat model     | 8-section document (system, trust boundaries, adversary, metric, attack, baselines, scope, validity threats) | Locked, internally consistent |
-| Foundation       | `auth/tokens.py`, `policy/scope_map.py`, `tools/siem_action.py`, `harness/recorder.py`, `harness/scorer.py`, `orchestrator/orchestrator.py` | 43 unit tests |
-| Harness          | `harness/sweep.py` — `run()`, `verify_deterministic()`, `emit_curve()`    | 16 composition/harness tests |
-| **Total**        |                                                                           | **59 tests green; gate clean; curve confirmed** |
+**LLM Engineering**
 
-The AIS curve is produced **deterministically** against the real modules:
-`verify_deterministic()` proves each baseline yields byte-identical records
-across repeated runs, so a single canonical execution per baseline is sufficient.
-The result is **categorical** — the attack succeeds by construction, not with
-some probability — so the finding is a curve shape, not a statistical estimate.
+![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
+![FAISS](https://img.shields.io/badge/FAISS-0467DF?style=flat-square&logo=meta&logoColor=white)
+![RAGAS](https://img.shields.io/badge/RAGAS-6E40C9?style=flat-square&logoColor=white)
+![LangSmith](https://img.shields.io/badge/LangSmith-1C3C3C?style=flat-square&logoColor=white)
 
-### Scope (what v1 is, and isn't)
+**Production Stack**
 
-These are deliberate boundaries, stated up front:
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
 
-- **One topology (n = 1).** The benchmark demonstrates the mechanism in one
-  minimal, spec-compliant system. Generalization is argued *structurally*, not
-  proven across many architectures.
-- **Scripted agents, no LLM.** Agents are deterministic by design — this isolates
-  the delegation-layer failure from model behavior. AEGIS-AT does not test model
-  robustness.
-- **Baseline 4 is attribution-only in v1.** B4's *attribution* equals B3 by
-  construction; a real hash-chained tamper-evident log module (which would test
-  log *integrity*, a separate metric) is future work.
-- **Categorical, not statistical.** Confidence intervals are degenerate by design;
-  a stochastic-policy sweep that would yield a real attack-frequency estimate is
-  future work.
-- **Sender-constraint (Baseline 5) not implemented.** The hypothesized fix
-  (DPoP / mTLS-bound tokens) is named as the primary future-defense item.
+<div align="center">
+
+[![Skills](https://skillicons.dev/icons?i=python,pytorch,sklearn,fastapi,docker,kubernetes,kafka,redis,aws,git,linux,github&theme=dark&perline=12)](https://skillicons.dev)
+
+</div>
 
 ---
 
-## Reproduce
+## Featured Projects
 
-```bash
-pip install -r aegis-at/requirements.txt
-pytest tests/core -v          # 59 tests
-bash scripts/check.sh         # lint, format, invariant, and test gate
+### AEGIS-AT — Attribution Integrity Benchmark for Multi-Agent AI
+
+<img align="right" src="https://media.giphy.com/media/077i6AULCXc0FKTj9s/giphy.gif" width="180" />
+
+🔗 **Repository:** https://github.com/rahulsingh1397/aegis-at
+
+A red-team benchmark measuring whether **audit attribution survives delegation**
+in multi-agent AI systems. Headline finding: adding the industry-standard
+delegation mechanism (RFC 8693) to a correctly-functioning system makes
+attribution *worse* — the audit log names the agent that **requested** an action,
+not the one that **executed** it.
+
+**Why this research matters.** NIST's NCCoE (Feb 2026) named auditing and
+non-repudiation of AI agents as an open problem; the CSA's confused-deputy
+research note (Mar 2026) warns that when an action runs under a trusted agent's
+identity, audit logs "look legitimate and delay detection." AEGIS-AT measures
+exactly that gap — and names the standardized fix (sender-constrained tokens).
+
+**The finding — a non-monotonic attribution curve:**
+
+| Baseline | Defense in place | AIS |
+|---|---|---|
+| B1 | Shared service account | 0.0 |
+| B2 | Per-agent identity | 1.0 |
+| B3 | + RFC 8693 delegation | 0.0 |
+| B4 | + tamper-evident log | 0.0 |
+
+Attribution is perfect under per-agent identity (B2), then **regresses to zero**
+when signed delegation is added (B3); tamper-evident logging (B4) cannot recover
+it. The failure is structural: RFC 8693's current-actor claim, combined with
+unbound bearer tokens, records the requester and provides no field for the executor.
+
+**Approach & rigor**
+
+- Minimal SOC pipeline: two sibling agents, one scope-gated tool, four config-flag baselines over one codebase
+- Independent ground-truth recorder + strict triple-match metric (actor, scope, principal_chain)
+- Curve **predicted in the threat model before** the attack code was written
+- Deterministic and reproducible — 59 tests, single-command `pytest`
+- Honest scope: n=1 topology, scripted agents (no LLM confounds), categorical result; sender-constrained Baseline 5 named as the next step
+
+`Python` `RFC 8693 / OAuth` `PyJWT` `pytest` `Threat Modeling`
+
+<br clear="right"/>
+
+---
+
+### MITRE-Core v2 — Attack Campaign Correlation Engine
+
+<img align="right" src="https://media.giphy.com/media/RDZo7znAdn2u7sAcWH/giphy.gif" width="190" />
+
+🔗 **Repository:** https://github.com/rahulsingh1397/Mitre-Core_v2
+
+Graph-based cybersecurity correlation engine that clusters SOC/SIEM alerts into MITRE ATT&CK-aligned attack campaigns.
+
+**Why this research matters.** Security analysts receive thousands of fragmented
+alerts daily. Most correlation systems depend on labeled attack campaigns, which
+are expensive and often unavailable in real SOC environments. MITRE-Core v2
+explores whether heterogeneous GNNs can cluster attack activity without labels at
+inference time, while staying robust across telemetry domains.
+
+**Architecture**
+
+```text
+Raw Alerts → AlertToGraphConverter → MITREHeteroGNN (HeteroGATConv)
+           → Soft-ZCA Whitening → GAEC Clustering (HDBSCAN · Spectral · BGMM)
+           → Campaign Clusters + ATT&CK Mapping
 ```
 
-The full pipeline reproduces in seconds. Every AIS value is asserted in the test
-suite against the curve predicted in the threat model *before* the attack code
-was written — a contradicted prediction would be reported as a finding, not
-silenced.
+**Core technical contributions**
+
+- Heterogeneous graph modeling with 8 node types and 29 edge relations
+- 6-dim alert features projected into 128-dim embedding space
+- Geometry-Aware Embedding Confidence (GAEC)
+- Soft-ZCA whitening to mitigate representation collapse
+- Full-batch embedding inference for stable clustering
+
+**Selected findings**
+
+| Finding | Result |
+|---|---|
+| Full-batch inference | Restored clustering separability after inference correction |
+| 6-dim alert features | Stable cosine similarity ~0.73 (no collapse) |
+| ZCA whitening | Recovered clustering structure on sparse SIEM datasets |
+| Union-Find refinement | Disabled after net-negative evaluation across datasets |
+
+`PyTorch Geometric` `HDBSCAN` `Spectral Clustering` `Docker`
+
+<br clear="right"/>
 
 ---
 
-## Repository map
+## Verified Benchmark Results — MITRE-Core v2 (Apr 2026)
 
-```
-Documents/
-  ThreatModel/threat-model.md          The full argument (§1–§8): system, metric,
-                                        attack, baselines, scope, validity threats.
-  ImportantQuestions/                   Working notes — the *why* behind each module:
-    Harness_Notes/{Recorder,Sweep,scorer}Notes/
-    orchestrator_notes/  policy_notes/  toolsDocs/
-aegis-at/
-  auth/tokens.py                        RFC 8693 token mint + chain resolution.
-  policy/scope_map.py                   Shared command→scope contract.
-  tools/siem_action.py                  Scope-gated SOAR tool (Boundary 3).
-  orchestrator/orchestrator.py          Stateless RFC 8693 token-exchange minter.
-  harness/recorder.py                   Independent ground-truth recorder (Boundary 5).
-  harness/scorer.py                     AIS metric + non-monotonicity predicate.
-  harness/sweep.py                      Baseline-switch harness; emits the curve.
-tests/core/                             59 tests across unit + composition layers.
-```
+All results reproduced using fixed seeds and full-dataset inference. Canonical checkpoint: `network_v9_v3`.
 
-Start with `Documents/ThreatModel/threat-model.md` for the argument, or
-`harness/sweep.py` + `tests/core/test_emit_curve.py` for the executable result.
+| Dataset | Domain | Zero-Shot ARI | Best ARI | Best Mode |
+|---|---|---|---|---|
+| DARPA OpTC | Host telemetry | **0.979** *(binary setup)* | 0.979 | Zero-shot |
+| NSL-KDD | Network IDS | **0.739** | 0.739 | Zero-shot |
+| TON_IoT | IoT Network | 0.431 | **0.845** | Supervised |
+| UNSW-NB15 | Enterprise network | **0.401** | **0.538** | SupCon |
+| CICIDS2017 | Enterprise IDS | **0.284** | 0.284 | Zero-shot |
+| SQTK_SIEM | SIEM / SOC alerts | **0.184** | 0.184 | Zero-shot |
+
+- Zero-shot inference uses clustering without campaign labels at inference time
+- Supervised mode uses prototype classification in embedding space
+- Metrics verified Apr 25, 2026
 
 ---
 
-## Background & related work
+### RL Logon Anomaly Detection — Adaptive Threshold Engine
 
-AEGIS-AT sits inside an active standards conversation and a string of real-world
-incidents. All citations below were checked against their live primary sources.
+🔗 **Repository:** https://github.com/rahulsingh1397/Reinforcement_learning_AnomalyDetection
 
-**The standards call — bodies are explicitly asking for this:**
+Behavioral anomaly detection that adapts user-level thresholds using analyst feedback loops.
 
-- **NIST NCCoE**, *Accelerating the Adoption of Software and AI Agent Identity and
-  Authorization* (concept paper, Feb 5 2026). Names auditing and non-repudiation
-  of AI agent actions as an open problem and asks how existing identity standards
-  (OAuth 2.0, OpenID, SPIFFE) should apply to multi-agent delegation — including
-  the unresolved case of multi-hop delegation.
-  [csrc.nist.gov](https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd)
-- **OpenID Foundation**, response to NIST on AI agent security (Mar 2026). Frames
-  the most urgent risks as failures of *trust*: "Who authorised this agent to act?
-  On whose behalf? Can that be verified?" — and notes today's deployments rely on
-  unsigned credentials and no clear chain of accountability.
-  [openid.net](https://openid.net/oidf-responds-to-nist-on-ai-agent-security/)
-- **Cloud Security Alliance**, *Confused Deputy Attacks on Autonomous AI Agents*
-  (Mar 23 2026). Establishes confused-deputy as a high-severity pattern in agent
-  deployments and observes that when an action runs under a trusted agent's
-  identity, **audit logs may look legitimate and delay detection** — precisely the
-  attribution failure AEGIS-AT measures.
-  [labs.cloudsecurityalliance.org](https://labs.cloudsecurityalliance.org/research/csa-research-note-ai-agent-confused-deputy-prompt-injection/)
-- **Foundation for American Innovation**, *Human-Anchored Intent-Bound Delegation
-  (HAID)* (submitted to NIST, Apr 2026). A proposed fix: signed, scope-attenuating,
-  human-anchored delegation chains — the kind of execution-identity binding
-  AEGIS-AT names as future work (Baseline 5).
-  [thefai.org](https://www.thefai.org/posts/human-anchored-intent-bound-delegation-for-ai-agents)
+- Reinforcement-learning-based threshold adaptation
+- Identity-specific behavioral profiling
+- SIEM-ready structured outputs
 
-**Real-world incidents — the failure modes in production:**
-
-- **"Clinejection"** (Feb 2026). A crafted GitHub issue title drove the Cline AI
-  tool's own triage bot into a supply-chain compromise — an unauthorized npm
-  package on ~4,000 developer machines in an 8-hour window. Attacker-controlled
-  input steering a privileged agent through a confused-deputy chain — the input
-  vector AEGIS-AT models.
-  [Snyk](https://snyk.io/blog/cline-supply-chain-attack-prompt-injection-github-actions/)
-- **Salesloft Drift / UNC6395** (Aug 2025). Stolen OAuth tokens from the Drift AI
-  chat integration were used to exfiltrate Salesforce data from 700+ organizations.
-  A production demonstration of the **unbound bearer-token** weakness — a token
-  presented by a party that was not its legitimate holder — which is the holder-model
-  premise AEGIS-AT's Baseline 3 depends on.
-  [Google Threat Intelligence](https://cloud.google.com/blog/topics/threat-intelligence/data-theft-salesforce-instances-via-salesloft-drift)
-
-**Closest prior academic work:**
-
-- *The Misattribution Gap* (2026) measures model-vs-memory misattribution in
-  agentic systems — adjacent, but a different layer (memory poisoning, not
-  delegation-chain attribution). See `Documents/References/References.md` for the
-  full citation list.
+`Python` `Reinforcement Learning` `Pandas`
 
 ---
 
-## License
+### Enterprise AI Knowledge Agent — Production RAG System
 
-This repository is dual-licensed:
+Production RAG pipeline and ReAct agent supporting regulated enterprise workflows across large-scale document environments.
 
-- **Code** — everything under `aegis-at/`, `tests/`, and `scripts/` — is licensed
-  under the **Apache License 2.0**. See [`LICENSE`](LICENSE).
-- **Documentation** — everything under `Documents/` (threat model, working notes,
-  references) — is licensed under **Creative Commons Attribution 4.0 International
-  (CC BY 4.0)**. See [`Documents/LICENSE-docs`](Documents/LICENSE-docs).
+- Hybrid retrieval (BM25 + dense + RRF), cross-encoder re-ranking
+- Presidio + RBAC governance layer
+- Continuous evaluation (RAGAS, LangSmith); audit logging + compliance checks
+
+**Operational metrics:** Recall@5 0.68 → 0.91 · 2K–5K daily queries · P99 latency 1.45s · zero reported compliance incidents
+
+`LangChain` `FAISS` `FastAPI` `Docker`
+
+---
+
+### Enterprise LLM Security Auditor
+
+<img align="right" src="https://media.giphy.com/media/3o7aCSPqXE5C6T8tBC/giphy.gif" width="170" />
+
+🔗 **Repository:** https://github.com/rahulsingh1397/Enterprise_LLM_Security_Auditor
+
+Evaluation harness for measuring vulnerability exposure in production LLM deployments.
+
+- Coverage: prompt injection, jailbreaks, PII leakage, data exfiltration, RAG poisoning, system-prompt extraction
+- 61 adversarial evaluation tests; semantic vulnerability evaluation
+- Automated PDF audit generation; end-to-end audits in 5–10 minutes
+
+`FastAPI` `React` `Docker`
+
+<br clear="right"/>
+
+---
+
+### AI Compliance Monitor
+
+<img align="right" src="https://media.giphy.com/media/du3J3cXyzhj75IOgvA/giphy.gif" width="170" />
+
+🔗 **Repository:** https://github.com/rahulsingh1397/AI_Compliance_Monitor
+
+Event-driven ML governance system for monitoring production AI behavior and generating audit evidence.
+
+- Isolation Forest + Autoencoder monitoring; differential privacy support
+- SOC2 / GDPR / HIPAA export pipelines; native enterprise-tool integrations
+
+`FastAPI` `Kafka` `Docker` `QRadar`
+
+<br clear="right"/>
+
+---
+
+## Active Research
+
+| Research Area | Status | Details |
+|---|---|---|
+| AEGIS-AT v2 | 🔬 Active | Real tamper-evident log (B4), sender-constrained Baseline 5, stochastic sweep |
+| SupCon fine-tuning | ✅ Verified | Improved UNSW-NB15 clustering stability |
+| ZCA whitening for SIEM | ✅ Verified | Improved sparse embedding separability |
+| Multi-domain training | 📋 Planned | Expansion across additional telemetry domains |
+| GAEC arXiv preprint | ✍️ Drafting | Full methodology and ablation analysis |
+
+---
+
+## GitHub Stats
+
+<div align="center">
+
+<img height="165" src="https://github-readme-stats.vercel.app/api?username=rahulsingh1397&show_icons=true&hide_border=true&title_color=00F5D4&icon_color=00F5D4&text_color=c9d1d9&bg_color=0a0a0a" />
+<img height="165" src="https://github-readme-stats.vercel.app/api/top-langs/?username=rahulsingh1397&layout=compact&hide_border=true&title_color=00F5D4&text_color=c9d1d9&bg_color=0a0a0a" />
+
+<br/><br/>
+
+![GitHub Streak](https://streak-stats.demolab.com?user=rahulsingh1397&theme=dark&hide_border=true&ring=00F5D4&fire=00F5D4&currStreakLabel=00F5D4&background=0a0a0a)
+
+<br/><br/>
+
+![Trophies](https://github-profile-trophy.vercel.app/?username=rahulsingh1397&theme=onedark&no-frame=true&column=7&margin-w=4&title_color=00F5D4)
+
+<br/><br/>
+
+![GitHub Activity Graph](https://github-readme-activity-graph.vercel.app/graph?username=rahulsingh1397&bg_color=050816&color=22d3ee&line=06b6d4&point=67e8f9&area_color=164e63&area=true&hide_border=true&radius=10)
+
+</div>
+
+---
+
+<div align="center">
+
+> Building reliable, production-oriented AI systems — and the benchmarks that test whether they hold.
+
+**Stevens Institute of Technology · MS Information Systems**
+
+Open to: AI/ML Engineer · AI Safety Researcher · Applied ML Researcher · LLM Systems Engineer
+
+</div>
