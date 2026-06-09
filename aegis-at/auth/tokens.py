@@ -1,11 +1,11 @@
 """
 auth/tokens.py
 ================
-Days 3-4 deliverable: mint and verify RFC 8693 delegation tokens BY HAND.
+Mint and verify RFC 8693 delegation tokens BY HAND.
 
 The point of this file is UNDERSTANDING, not infrastructure. Before you let an
-auth server do this for you, you build the `act` claim yourself so you can defend
-exactly how the delegation chain works in an interview.
+auth server do this for you, you build the `act` claim yourself so you understand
+exactly how the delegation chain works.
 
 RFC 8693 (OAuth 2.0 Token Exchange) represents delegation with the `act` claim
 ("actor"). The key idea:
@@ -142,7 +142,7 @@ def actor_chain(claims: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Day-3 smoke test: run this file directly and read the output. When this makes
+# Smoke test: run this file directly and read the output. When this makes
 # sense to you, the load-bearing part of the project is real.
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
