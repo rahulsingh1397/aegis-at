@@ -5,7 +5,7 @@ This directory holds the AEGIS-AT benchmark paper in three forms.
 | File | What it is | Use it for |
 | :--- | :--- | :--- |
 | [`aegis-at.tex`](./aegis-at.tex) | Canonical LaTeX source (self-contained, standard packages) | arXiv / conference submission; the citable artifact |
-| [`aegis-at.pdf`](./aegis-at.pdf) | Compiled output (16 pp., US-letter) | Reading / circulation |
+| [`aegis-at.pdf`](./aegis-at.pdf) | Compiled output (17 pp., US-letter) | Reading / circulation |
 | [`aegis-at.md`](./aegis-at.md) | GitHub-rendered Markdown companion | Browsing on GitHub; quick reference |
 
 The `.tex` is the source of truth. The `.md` mirrors its content for GitHub

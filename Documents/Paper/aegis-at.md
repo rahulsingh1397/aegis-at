@@ -115,6 +115,10 @@ model, which does not require sender-constraint) and a topology where minting
 precedes execution-routing, the system logs the *requester*. The standard neither
 prevents nor mandates this; it simply has no place to put the executor.
 
+**What sets this apart.** Unlike delegation frameworks that report detection rates
+(can an attack be blocked?), AEGIS-AT treats attribution correctness itself — does
+the logged actor equal the true executor? — as the measured dependent variable.
+
 **Contributions.**
 
 1. **A metric.** The Attribution Integrity Score (AIS): a strict, three-field
@@ -202,6 +206,32 @@ impersonation at the delegation layer. To our knowledge no published adversarial
 benchmark scores attribution integrity for the sibling-impersonation case across a
 structured defense gradient; the problem space is *defensibly underexplored*
 rather than untouched.
+
+The closest adjacent framework is **SentinelAgent / DelegationBench v4** [[12]](#ref12):
+a Delegation Chain Calculus, a non-LLM Delegation Authority Service (DAS), and a
+516-scenario benchmark (150 adversarial actions across seven attack categories; 366
+benign), reporting 100% attack detection at 0% false-positive rate with TLA+
+verification of its deterministic properties — including *forensic
+reconstructibility* (P4): given any action, the hash-linked delegation chain that
+authorized it is reconstructible in O(n). SentinelAgent and AEGIS-AT measure
+different quantities. SentinelAgent measures *detection* — does the DAS block a
+policy-violating delegation? AEGIS-AT measures *attribution integrity* — does the
+logged actor equal the true executor? — on actions that violate no policy. The two
+meet at one point: P4 reconstructs the lineage of the token *presented at the
+proxy*, which establishes who was *authorized*, not who *wielded* the token at the
+resource, unless the token is sender-constrained. SentinelAgent's tokens are
+HMAC-signed bearer credentials with no proof-of-possession; under the
+re-delegation hand-off we study (§5), a sibling presents a token whose chain names
+another agent, so hash-chain reconstruction succeeds while executor attribution
+fails. AEGIS-AT therefore does not refute reconstructibility — it *bounds the
+audit-attribution interpretation of P4*: a walkable chain certifies who was
+authorized, not who acted. A DAS could close this by binding the token to its
+holder (DPoP / mTLS) or authenticating the caller independently, but that is an
+added sender-constraint, not a consequence of reconstruction. The attack also needs
+none of SentinelAgent's stronger adversaries (e.g. its compromised-agent case): it
+succeeds with alert-text control alone, no component misbehaving. Among the works
+we compare, AEGIS-AT is the only one that treats attribution correctness as a
+*measured* dependent variable rather than a design guarantee.
 
 ---
 
@@ -627,6 +657,16 @@ attacker-triggered actions for a clean measurement; an expanded denominator over
 all re-delegated containment actions (v2) would measure the structural property
 more faithfully.
 
+**Delegation's auditability benefit is conditional.** This result *qualifies*
+rather than rejects the emerging industry narrative that delegation beats
+impersonation for accountability [[14]](#ref14), [[15]](#ref15). Delegation does
+beat shared service accounts (B1) on lineage and least privilege; what AEGIS-AT
+shows is that delegation's *audit-attribution* advantage is conditional — absent
+sender-constraint, B3 attributes worse than the simpler per-agent identity of B2,
+even while every delegation check passes. We are not arguing impersonation is
+preferable; we are bounding when delegation actually delivers the accountability it
+is promoted for.
+
 **Tamper-evident logging protects a wrong answer.** Baseline 4 underperforms a
 naive expectation, and this is the point: the second primitive standards bodies
 emphasize for non-repudiation cannot recover correct attribution, because the
@@ -688,6 +728,13 @@ each. The first is a genuine limitation we concede rather than defeat.
   its holder; under either, Contain cannot present Enrich's token and must obtain
   its own, so the current actor would track the executor. Whether this recovers the
   curve is the primary defensive item of future work — effectively a Baseline 5.
+  Agentic JWT [[13]](#ref13) is one concrete design in this direction — per-agent
+  proof-of-possession keys plus intent/delegation claims binding an API call to a
+  registered agent and workflow step. In AEGIS-AT terms it is a plausible Baseline
+  5 instantiation: it proposes the sender-constraint but does not measure the
+  attribution-integrity regression that motivates it. Pairing such a protocol with
+  the AIS metric — *does sender-constraint recover the curve at B5?* — is the
+  natural next experiment.
 - **Prevalence across topologies.** Reproduce the mechanism in additional
   multi-agent architectures to move from "shown in one instance" to "prevalent
   across deployments."
@@ -779,3 +826,17 @@ Failure in Agentic AI Systems.* arXiv:2605.22842, May 2026.
 
 <a id="ref11"></a>[11] N. Hardy. *The Confused Deputy (or why capabilities might
 have been invented).* ACM SIGOPS Operating Systems Review, 22(4), 1988.
+
+<a id="ref12"></a>[12] K. S. R. Patil. *SentinelAgent: Intent-Verified Delegation
+Chains for Securing Federal Multi-Agent AI Systems.* arXiv:2604.02767, April 2026.
+<https://arxiv.org/abs/2604.02767>
+
+<a id="ref13"></a>[13] A. Goswami. *Agentic JWT: Secure Delegation for Agentic AI.*
+arXiv:2509.13597, September 2025. <https://arxiv.org/abs/2509.13597>
+
+<a id="ref14"></a>[14] Red Hat. *Zero Trust for AI Agents: Why Delegation Beats
+Impersonation.* Red Hat Emerging Tech, May 21, 2026.
+<https://next.redhat.com/2026/05/21/zero-trust-for-ai-agents-why-delegation-beats-impersonation/>
+
+<a id="ref15"></a>[15] Okta. *Agent Security: Securing the Delegation Chain.* Okta AI
+Security Blog, 2026. <https://www.okta.com/blog/ai/agent-security-delegation-chain/>

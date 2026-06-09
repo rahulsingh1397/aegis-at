@@ -123,6 +123,67 @@ An independent IETF draft defines a compatible architectural model for human-anc
 
 ---
 
+### 8. SentinelAgent / DelegationBench v4 — *closest adjacent framework*
+
+- **Status:** Verified (local source read: `Documents/ResearchPapers/SentinalAgentarXiv-2604.02767v1/`)
+- **Author:** KrishnaSaiReddy Patil
+- **Full Title:** *SentinelAgent: Intent-Verified Delegation Chains for Securing Federal Multi-Agent AI Systems*
+- **Publication Date:** April 2026
+- **arXiv:** [https://arxiv.org/abs/2604.02767](https://arxiv.org/abs/2604.02767)
+
+**Core Contribution:** A *Delegation Chain Calculus* (DCC) with seven properties (P1 authority narrowing, P2 intent preservation, P3 policy preservation, **P4 forensic reconstructibility**, P5 cascade containment, P6 scope-action conformance, P7 output schema conformance); a non-LLM *Delegation Authority Service* (DAS) runtime; and the *DelegationBench v4* benchmark — **516 scenarios (150 attacks across seven attack categories A,B,C,D,F,G,H; 366 benign across E,I,J)** — reporting **100% TPR at 0% FPR** with TLA+ model checking of the deterministic properties (P1, P3–P7) across **2.7M states**.
+
+**Token model (decisive for the AEGIS-AT comparison):** delegation tokens are **HMAC-signed bearer credentials** (τ = id, src, **dst**, scope, intent, policy, parent-hash, expiry, sig). **No proof-of-possession / mTLS binding** is described — the token is not bound to the agent that presents it.
+
+**Relevance to AEGIS-AT:** This is the framework a reviewer will point at first. It measures *detection* (TPR/FPR) and *asserts* P4 reconstructibility as a deterministic, TLA+-verified property. It does **not** measure whether the agent that *presented* the token equals the agent that *executed* the action — i.e., it does not measure executor-vs-claimed attribution under transferable bearer tokens, on actions that violate no policy. P4 reconstructs the lineage of the *token presented at the proxy* (who was authorized), not the *holder that wielded it* (who acted). AEGIS-AT therefore **bounds the audit-attribution interpretation of P4** — it does not refute reconstructibility. Note also that SentinelAgent's adversary model includes a **compromised-agent (A2)**; the AEGIS-AT attack succeeds under a *weaker* adversary (alert-text control only, no process compromise), which strengthens the finding.
+
+> **Framing rule (reviewer-safe):** say "AEGIS-AT bounds the audit-attribution interpretation of P4 under transferable, non-sender-constrained bearer tokens." Do **not** say "AEGIS-AT falsifies P4."
+
+---
+
+### 9. Agentic JWT (Dual-Faceted Intent Token Binding)
+
+- **Status:** Verified (local source read: `Documents/ResearchPapers/Agentic_JWT_SecureDelegationarXiv-2509.13597v1/`)
+- **Author:** A. Goswami
+- **Full Title:** *Agentic JWT: Secure Delegation for Agentic AI* (dual-faceted intent/delegation token)
+- **Publication Date:** September 2025
+- **arXiv:** [https://arxiv.org/abs/2509.13597](https://arxiv.org/abs/2509.13597)
+
+**Core Contribution:** A JWT extension binding each agent action to a cryptographically verifiable **user intent** and an optional **workflow step**, using **per-agent proof-of-possession (PoP) keys** to prevent replay and in-process impersonation, plus a checksum-based client shim. The introduction explicitly names the structural insight AEGIS-AT measures: *"a separation between the actual user (generator of the intent) and the executing agent (executor of the API call)."*
+
+**Status of evaluation (important caveat):** a proof-of-concept "blocks 100% of threat requests," but the paper states a *"comprehensive performance and security evaluation … will appear in our forthcoming journal submission."* Treat it as a **solution proposal / prototype**, not a completed adversarial measurement.
+
+**Relevance to AEGIS-AT:** This is closest to AEGIS-AT's *fix*, not its *finding*. Per-agent PoP keys are exactly the sender-constraint named as **Baseline 5** (threat-model §8.10; paper §12). Agentic JWT *proposes* the binding but does **not** measure the attribution-integrity regression that motivates it — AEGIS-AT supplies the missing measurement. Complementary, not rival.
+
+---
+
+### 10. Red Hat — "Zero Trust for AI Agents: Why Delegation Beats Impersonation"
+
+- **Status:** Verified (industry narrative)
+- **Type:** Vendor engineering blog (Red Hat Emerging Tech)
+- **Publication Date:** May 21, 2026
+- **Source:** [https://next.redhat.com/2026/05/21/zero-trust-for-ai-agents-why-delegation-beats-impersonation/](https://next.redhat.com/2026/05/21/zero-trust-for-ai-agents-why-delegation-beats-impersonation/)
+
+**Core Narrative:** Delegation beats impersonation; agent identity stays separate from the human's; every delegation hop is traceable; delegation delivers auditability and permission narrowing.
+
+**Relevance to AEGIS-AT:** Narrative foil. AEGIS-AT *qualifies, does not reject* this: delegation does beat shared service accounts (B1) on lineage and least privilege, but its **audit-attribution advantage is conditional** — without sender-constraint, B3 attributes *worse* than per-agent identity (B2). The counterexample targets the auditability claim, not least-privilege.
+
+---
+
+### 11. Okta — "Agent Security: Securing the Delegation Chain"
+
+- **Status:** Verified (industry narrative)
+- **Type:** Vendor blog (Okta, AI security)
+- **Source:** [https://www.okta.com/blog/ai/agent-security-delegation-chain/](https://www.okta.com/blog/ai/agent-security-delegation-chain/)
+
+**Core Narrative:** Secure delegation framed around scope attenuation, token-level lineage verification, persistent context, and audit-trail / oversight.
+
+**Relevance to AEGIS-AT:** Same conditional-auditability foil as Red Hat. *(Distinct from the Okta Salesloft post cited under Reference 6 — that is a different Okta item.)*
+
+> **Caution — CSA:** Do **not** group "Red Hat / Okta / CSA" as a single pro-delegation-auditability narrative. The CSA source on file (Reference 7) is a *confused-deputy* research note, not delegation-auditability advocacy. Cite Red Hat and Okta for the narrative; cite CSA only for confused deputy.
+
+---
+
 ## Addressing the Two Cautions
 
 ### Caution One: Verify References Before Adopting Framing
@@ -154,6 +215,10 @@ The stronger claim "Nobody has measured this yet" is inaccurate. The correct fra
 | Salesloft Drift breach (Aug 2025) | Verified | CSA, Okta, FINRA, Cloudflare incident response |
 | OpenID Foundation NIST response (Mar 2026) | Verified | openid.net |
 | CSA Confused Deputy research note (Mar 2026) | Verified | CSA AI Safety Initiative |
+| SentinelAgent / DelegationBench v4 (Apr 2026) | Verified | arXiv:2604.02767; closest adjacent framework (P4 forensic reconstructibility) |
+| Agentic JWT (Sep 2025) | Verified | arXiv:2509.13597; per-agent PoP keys = candidate Baseline 5 |
+| Red Hat "delegation beats impersonation" (May 2026) | Verified | next.redhat.com; narrative foil (conditional auditability) |
+| Okta "delegation chain" (2026) | Verified | okta.com/blog/ai; narrative foil (conditional auditability) |
 
 **Note:** For the Misattribution Gap paper and HAID proposal, verify them directly before citing them as named concepts. For the "nobody has measured this" language, replace it with "defensibly underexplored" or "no published adversarial benchmark exists for this specific measurement."
 
@@ -170,3 +235,7 @@ The stronger claim "Nobody has measured this yet" is inaccurate. The correct fra
 | IETF — Architecture for Human-Anchored Agent Identity | [Link](https://datatracker.ietf.org/doc/draft-beyer-agent-identity-architecture/) |
 | Promptfoo — Multi-agent confused deputy privilege escalation | [Link](https://www.promptfoo.dev/docs/guides/multi-agent-confused-deputy/) |
 | Okta — "OAuth tokens sat active for months" (Salesloft analysis) | [Link](https://www.okta.com/blog/2026/02/oauth-tokens-sat-active-for-months/) |
+
+
+https://datatracker.ietf.org/doc/html/rfc8693
+https://dev.to/kanywst/rfc-8693-deep-dive-token-exchange-310i

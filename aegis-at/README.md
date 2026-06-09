@@ -9,7 +9,7 @@ Score (AIS)** across four progressive defense baselines.
 > story (the finding, why it matters, the attack, the threat model). This file is the
 > developer-facing guide to the `aegis-at/` package itself.
 >
-> The canonical, citable write-up is the 16-page paper in
+> The canonical, citable write-up is the 17-page paper in
 > [`../Documents/Paper/`](../Documents/Paper/) (PDF + LaTeX + Markdown). The full
 > argument lives in [`../Documents/ThreatModel/threat-model.md`](../Documents/ThreatModel/threat-model.md).
 
