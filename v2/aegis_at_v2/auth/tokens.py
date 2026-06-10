@@ -60,7 +60,10 @@ def mint_initial_token(principal: str, scope: str) -> str:
 
 
 def exchange_token(
-    current_token: str, new_actor: str, narrowed_scope: str | None = None
+    current_token: str,
+    new_actor: str,
+    narrowed_scope: str | None = None,
+    cnf: str | None = None,
 ) -> str:
     """RFC 8693 token exchange: take an existing token and produce one where
     `new_actor` is now acting on behalf of whoever the current token represents.
@@ -69,6 +72,12 @@ def exchange_token(
       1. verify the incoming token (you can only delegate authority you hold),
       2. push the *previous* subject+act into the new token's `act` claim (nesting),
       3. optionally NARROW the scope (you can delegate less than you have, never more).
+
+    cnf (v2, threat-model-v2.md §5): when provided, the minted token carries
+    a confirmation claim `cnf: {"jkt": cnf}` (RFC 7800) binding it to the
+    holder's DPoP key thumbprint. None (the B1-B4 default) mints an unbound
+    bearer token, exactly as v1. This single optional parameter is the only
+    token-layer change Baseline 5 requires.
     """
     prior = verify_token(current_token)  # must be valid to delegate from it
 
@@ -100,6 +109,8 @@ def exchange_token(
         "iat": now,
         "exp": now + dt.timedelta(minutes=10),
     }
+    if cnf is not None:
+        claims["cnf"] = {"jkt": cnf}  # RFC 7800 sender-constraint binding
     return jwt.encode(claims, PRIVATE_PEM, algorithm="RS256")
 
 

@@ -49,6 +49,8 @@ def make_recorder(
         token,
         *,
         now_fn: Callable[[], float] = time.time,
+        proof=None,
+        replay_cache=None,
     ):
         ts = now_fn()
 
@@ -74,6 +76,13 @@ def make_recorder(
             }
         )
 
-        return real_siem_action(command, target, token, now_fn=lambda: ts)
+        return real_siem_action(
+            command,
+            target,
+            token,
+            now_fn=lambda: ts,
+            proof=proof,
+            replay_cache=replay_cache,
+        )
 
     return wrapped

@@ -19,6 +19,9 @@ Phase 3 (threat-model-v2.md §5) adds DPoP proof verification + cnf binding;
 it does not rewrite this module.
 """
 
+import time
+
+from aegis_at_v2.auth import dpop
 from aegis_at_v2.auth.tokens import exchange_token, verify_token
 
 
@@ -27,6 +30,12 @@ def mint_delegated_token(
     new_actor: str,
     narrowed_scope: str,
     audience: str,
+    *,
+    cnf: str | None = None,
+    proof: str | None = None,
+    replay_cache: "dpop.ReplayCache | None" = None,
+    now: float | None = None,
+    proof_window_s: int = dpop.DEFAULT_PROOF_WINDOW_S,
 ) -> str:
     """Validate and mint a delegation token.
 
@@ -38,7 +47,18 @@ def mint_delegated_token(
         narrowed_scope: The scope to attach to the new token. Must be a
             subset of `current_token`'s scope.
         audience: The intended audience for the new token. Accepted but
-            not enforced (v1 §7 deferred item, unchanged in Phase 2).
+            not enforced (v1 §7 deferred item, unchanged in v2).
+        cnf: (Baseline 5, threat-model-v2.md §5.1) the DPoP key thumbprint
+            to bind the minted token to. When set, the orchestrator
+            REQUIRES `proof` — a DPoP proof from the agent that will hold
+            the new token — and verifies that the proof's key matches
+            `cnf` before binding. This is what makes the executor obtain a
+            token bound to ITS OWN key: an agent cannot get a token bound
+            to a key it does not possess. None (B1-B4) mints an unbound
+            bearer token, exactly as v1.
+        proof / replay_cache / now / proof_window_s: DPoP verification
+            context, required iff `cnf` is set. `now` defaults to wall
+            clock when omitted.
 
     Returns:
         A signed JWT delegation token, with `sub` carrying the principal
@@ -48,7 +68,10 @@ def mint_delegated_token(
     Raises:
         jwt.InvalidTokenError: `current_token` is forged or expired.
         ValueError: `current_token`'s `sub` is not a human principal, or
-            `narrowed_scope` is not a subset of `current_token`'s scope.
+            `narrowed_scope` is not a subset of `current_token`'s scope,
+            or `cnf` is set without DPoP context.
+        dpop.DPoPError: `cnf` is set but `proof` does not prove possession
+            of the bound key (or is replayed / stale).
     """
     # Decode + verify the current token. exchange_token verifies again
     # internally; this gives a clearer failure point at the orchestrator
@@ -59,6 +82,23 @@ def mint_delegated_token(
     if not claims["sub"].startswith("human:"):
         raise ValueError(f"subject must be a human principal, got {claims['sub']!r}")
 
+    # Baseline 5: bind only to a key the receiving agent proves it holds.
+    if cnf is not None:
+        if proof is None or replay_cache is None:
+            raise ValueError(
+                "cnf binding requires a DPoP proof and replay_cache "
+                "(threat-model-v2.md §5.1)"
+            )
+        dpop.verify_proof(
+            proof,
+            dpop.RESOURCE_HTM,
+            dpop.TOKEN_ENDPOINT_HTU,
+            cnf,
+            now if now is not None else time.time(),
+            replay_cache,
+            proof_window_s,
+        )
+
     # Hand off to the spec-compliant minter: scope narrowing, act
     # nesting per §4.1, principal preservation, signing.
-    return exchange_token(current_token, new_actor, narrowed_scope)
+    return exchange_token(current_token, new_actor, narrowed_scope, cnf=cnf)

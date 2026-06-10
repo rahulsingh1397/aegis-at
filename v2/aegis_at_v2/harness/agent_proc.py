@@ -58,9 +58,11 @@ def run_agent(
             (conn, *args); see harness/agent_bodies.py.
         args: forwarded to body after the pipe connection.
         tool_handler: parent-side callable
-            (true_actor, command, target, credential) -> claimed record.
-            This is where the recorder + tool live; exceptions it raises
-            are sent to the agent AND re-raised here.
+            (true_actor, command, target, credential, proof) -> claimed
+            record. This is where the recorder + tool live; exceptions it
+            raises are sent to the agent AND re-raised here. `proof` is the
+            agent-supplied DPoP proof (None for B1-B4); it is verified by
+            the tool, never used for identity (INV-4).
 
     The kernel serves requests until the body signals done, then joins
     the process. Tool-call protocol: see agent_bodies.request_tool_call.
@@ -84,7 +86,7 @@ def run_agent(
                 first_error = msg[1]
                 break
             if kind == "tool_call":
-                _, reported_pid, command, target, credential = msg
+                _, reported_pid, command, target, credential, proof = msg
                 if reported_pid != registered_pid:
                     raise PidMismatchError(
                         f"agent {name!r}: message PID {reported_pid} != "
@@ -93,7 +95,9 @@ def run_agent(
                 # Identity = kernel registry, never the message (INV-4).
                 true_actor = name
                 try:
-                    record = tool_handler(true_actor, command, target, credential)
+                    record = tool_handler(
+                        true_actor, command, target, credential, proof
+                    )
                 except Exception as e:
                     parent_conn.send(("error", e))
                     raise

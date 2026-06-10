@@ -114,5 +114,5 @@ def test_pid_mismatch_fails_loud():
 
 def _lying_pid_body(conn):
     """Body that self-reports a wrong PID (module-level: spawn-picklable)."""
-    conn.send(("tool_call", -1, "isolate_host", "host-42", None))
+    conn.send(("tool_call", -1, "isolate_host", "host-42", None, None))
     conn.recv()

@@ -18,6 +18,7 @@ RFC 8693 §4.1: current actor = outermost act.sub.
 import time
 from typing import Callable
 
+from aegis_at_v2.auth import dpop
 from aegis_at_v2.policy.scope_map import scope_for_command
 from aegis_at_v2.auth.tokens import actor_chain, verify_token
 
@@ -74,6 +75,10 @@ def siem_action(
     target: str,
     token: str,
     now_fn: Callable[[], float] = time.time,
+    *,
+    proof: str | None = None,
+    replay_cache: "dpop.ReplayCache | None" = None,
+    proof_window_s: int = dpop.DEFAULT_PROOF_WINDOW_S,
 ) -> dict:
     """Run Boundary 3 verification, return a Boundary 4 action-log record.
 
@@ -88,6 +93,14 @@ def siem_action(
     the authenticating agent; claimed_principal_chain is None. JWTs
     (Baselines 3-4) take the act-claim path below. Discrimination is on
     credential STRUCTURE only (threat-model.md §6); INV-2 holds for JWTs.
+
+    DPoP (Baseline 5, threat-model-v2.md §5.1): if the verified token
+    carries a `cnf.jkt` claim, the tool REQUIRES a DPoP `proof` and a
+    `replay_cache`, and verifies that the proof proves possession of the
+    bound key (and is fresh and not replayed) BEFORE resolving identity.
+    This is the check that rejects a lifted token: an agent presenting a
+    token bound to another agent's key cannot produce the matching proof.
+    Tokens without `cnf` (B1-B4) skip this entirely — proof is ignored.
     """
     if isinstance(token, dict) and token.get("format") == "apikey":
         check_scope({"scope": token["scope"]}, command)  # scope gate only
@@ -104,6 +117,27 @@ def siem_action(
     claims = verify_token(token)  # checks 1-2
     check_chain_integrity(claims)  # check 3
     check_scope(claims, command)  # check 4
+
+    # Baseline 5: sender-constraint. A bound token may only be wielded by
+    # the holder of the bound key; the proof rejects a lifted token before
+    # identity is resolved (threat-model-v2.md §5.2).
+    cnf = claims.get("cnf")
+    if cnf is not None:
+        if proof is None or replay_cache is None:
+            raise dpop.DPoPError(
+                "token carries cnf (sender-constrained) but no DPoP proof "
+                "was presented (threat-model-v2.md §5.1)"
+            )
+        dpop.verify_proof(
+            proof,
+            dpop.RESOURCE_HTM,
+            dpop.RESOURCE_HTU,
+            cnf["jkt"],
+            now_fn(),
+            replay_cache,
+            proof_window_s,
+        )
+
     claimed_actor = resolve_identity(claims)  # check 5 (INV-2)
 
     chain = actor_chain(claims)

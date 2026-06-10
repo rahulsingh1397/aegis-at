@@ -16,6 +16,7 @@ is wrong — not the v1 result.
 import time
 from typing import TypedDict, Callable
 
+from aegis_at_v2.auth import dpop
 from aegis_at_v2.auth.tokens import mint_initial_token
 from aegis_at_v2.orchestrator.orchestrator import mint_delegated_token
 from aegis_at_v2.tools.siem_action import siem_action
@@ -43,26 +44,60 @@ class RunResult(TypedDict):
     # which has no defects to embed them in.
 
 
-def _credential_for(baseline: str):
+def _credential_for(baseline: str, now: float, replay_cache=None):
     """The per-baseline credential — the ONLY thing that varies (INV-6).
+
+    Returns (credential, executor_body, body_extra_args):
+    everything the executor subprocess needs to present a call.
 
     B1: shared opaque credential (all agents act under one identity).
     B2: per-agent opaque credential (executor authenticates as itself).
     B3/B4: orchestrator-minted re-delegation JWT — the orchestrator
         honestly names Enrich (the requester) as current actor; Contain
-        (the wielder) presents it. B4 == B3 at minting; tamper-evidence
-        is at the log boundary, not here (§6).
+        (the wielder) presents an UNBOUND token. B4 == B3 at minting;
+        tamper-evidence is at the log boundary, not here (§6).
+    B5: sender-constrained. Enrich's bound token cannot be wielded by
+        Contain (the lift is rejected, §5.2), so Contain obtains its OWN
+        token from the orchestrator — bound to Contain's key, naming
+        Contain as current actor. The executor signs a DPoP proof at
+        call time. claimed actor then tracks the executor (§5.3).
     """
     if baseline == "B1":
-        return {"format": "apikey", "agent": "svc:soar", "scope": "siem:write"}
+        cred = {"format": "apikey", "agent": "svc:soar", "scope": "siem:write"}
+        return cred, agent_bodies.executor_body, ()
     if baseline == "B2":
-        return {"format": "apikey", "agent": "agent:contain", "scope": "siem:write"}
+        cred = {"format": "apikey", "agent": "agent:contain", "scope": "siem:write"}
+        return cred, agent_bodies.executor_body, ()
     if baseline in ("B3", "B4"):
         root = mint_initial_token("human:analyst", "siem:read siem:write")
-        return mint_delegated_token(
+        cred = mint_delegated_token(
             root, "agent:enrich", "siem:write", audience="siem_action"
         )
-    raise ValueError(f"unknown baseline {baseline!r} (expected B1-B4)")
+        return cred, agent_bodies.executor_body, ()
+    if baseline == "B5":
+        # The executor (Contain) holds its own DPoP key. It obtains a
+        # token bound to that key by presenting a possession proof to the
+        # orchestrator's token endpoint — so the orchestrator names
+        # Contain (the requester of THIS exchange) as current actor.
+        contain_key = dpop.DPoPKey()
+        root = mint_initial_token("human:analyst", "siem:read siem:write")
+        mint_proof = contain_key.create_proof(
+            dpop.RESOURCE_HTM, dpop.TOKEN_ENDPOINT_HTU, now
+        )
+        cred = mint_delegated_token(
+            root,
+            "agent:contain",
+            "siem:write",
+            audience="siem_action",
+            cnf=contain_key.jkt,
+            proof=mint_proof,
+            replay_cache=replay_cache,
+            now=now,
+        )
+        # The executor subprocess rebuilds the key and signs the
+        # call-time proof itself (its runtime possession evidence).
+        return cred, agent_bodies.dpop_executor_body, (contain_key.private_pem, now)
+    raise ValueError(f"unknown baseline {baseline!r} (expected B1-B5)")
 
 
 def _run_in_subprocess(name: str, body, args: tuple, tool_handler) -> None:
@@ -75,7 +110,7 @@ def _run_in_subprocess(name: str, body, args: tuple, tool_handler) -> None:
 def run(
     baseline: str,
     now_fn: Callable[[], float] = time.time,
-    executor_body=agent_bodies.executor_body,
+    executor_body=None,
 ) -> RunResult:
     """Run one canonical execution of the §5 attack for `baseline`.
 
@@ -83,29 +118,52 @@ def run(
     target, executor, tool, recorder, and scorer are identical. now_fn
     is injected (default wall clock) and stays in the PARENT process —
     the recorder stamps the timestamp at the harness, so determinism is
-    independent of subprocess scheduling. executor_body is injectable so
-    the §3.2 spoof test can swap in the spoofing body without forking
-    the harness.
+    independent of subprocess scheduling.
 
-    Note: for B3/B4 the credential JWT's own iat/exp come from tokens.py's
-    clock, not now_fn, so the JWT *bytes* differ run-to-run — but the
-    records carry only decoded claims (actor/scope/chain) + the recorder's
-    now_fn timestamp, so the RECORDS are byte-identical under a fixed clock.
+    executor_body overrides the per-baseline default body (e.g. the §3.2
+    spoof test swaps in the spoofing body); when None, the body chosen by
+    _credential_for is used so each baseline runs the body it needs (B5
+    must sign a DPoP proof, B1-B4 must not).
+
+    Note: for B3/B4/B5 the credential JWT's own iat/exp come from
+    tokens.py's clock, not now_fn, so the JWT *bytes* differ run-to-run —
+    but the records carry only decoded claims (actor/scope/chain) + the
+    recorder's now_fn timestamp, so the RECORDS are byte-identical under a
+    fixed clock. The DPoP proof bytes also vary (random jti) but never
+    enter a record either.
     """
-    credential = _credential_for(baseline)
+    now = now_fn()
+    # Per-run replay cache: B5 proofs are single-use; a fresh cache per run
+    # means independent runs never collide, and a within-run replay (the
+    # §5.4 test) is still caught. Held in the parent harness only.
+    replay_cache = dpop.ReplayCache()
+
+    credential, default_body, body_extra = _credential_for(
+        baseline, now, replay_cache=replay_cache
+    )
+    body = executor_body if executor_body is not None else default_body
+
     gt_log: list = []
     recorder = make_recorder(siem_action, gt_log)
     claimed_log: list = []
 
-    def tool_handler(true_actor, command, target, token):
-        record = recorder(true_actor, command, target, token, now_fn=now_fn)
+    def tool_handler(true_actor, command, target, token, proof):
+        record = recorder(
+            true_actor,
+            command,
+            target,
+            token,
+            now_fn=now_fn,
+            proof=proof,
+            replay_cache=replay_cache,
+        )
         claimed_log.append(record)
         return record
 
     _run_in_subprocess(
         _EXECUTOR,
-        executor_body,
-        (_COMMAND, _TARGET, credential),
+        body,
+        (_COMMAND, _TARGET, credential, *body_extra),
         tool_handler,
     )
 
@@ -169,12 +227,15 @@ _CI_CAVEAT = (
 
 
 def emit_curve(with_determinism_check: bool = True) -> dict:
-    """Produce the §6 four-point curve as a JSON-serializable dict.
+    """Produce the five-point curve (B1-B5) as a JSON-serializable dict.
 
-    Composes run() over B1-B4; optionally gates on verify_deterministic
+    Composes run() over B1-B5; optionally gates on verify_deterministic
     first (default True) so the curve is only emitted once determinism
     is a checked property, not a claim. A non-deterministic baseline
     raises AssertionError before any AIS values are produced.
+
+    B5 (threat-model-v2.md §5) extends the v1 four-point curve: the
+    sender-constraint layer hypothesized to recover attribution.
 
     The ci_caveat string is part of the schema specifically so a
     downstream consumer that reads this dict and writes a report cannot
@@ -185,7 +246,7 @@ def emit_curve(with_determinism_check: bool = True) -> dict:
     predicate pinned in one docstring (single source of truth).
     """
     curve: dict = {}
-    for baseline in ("B1", "B2", "B3", "B4"):
+    for baseline in ("B1", "B2", "B3", "B4", "B5"):
         if with_determinism_check:
             verify_deterministic(baseline)
         curve[baseline] = run(baseline)["result"]
