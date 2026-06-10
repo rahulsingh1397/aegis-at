@@ -21,9 +21,15 @@ from aegis_at_v2.auth.tokens import mint_initial_token
 from aegis_at_v2.orchestrator.orchestrator import mint_delegated_token
 from aegis_at_v2.tools.siem_action import siem_action
 from aegis_at_v2.harness.recorder import make_recorder
-from aegis_at_v2.harness.scorer import score_ais, ScorerResult
+from aegis_at_v2.harness.scorer import score_ais, score_lis, ScorerResult, LisResult
+from aegis_at_v2.harness.tamper_log import TamperEvidentLog
 from aegis_at_v2.harness import agent_proc
 from aegis_at_v2.harness import agent_bodies
+
+# Only Baseline 4 ships a hash-chained, tamper-evident log (§6.1). Every
+# other baseline writes a plain append-only log with no integrity artifact,
+# so a post-hoc rewrite is undetectable (LIS = 0.0 by definition, §4.2).
+_HASH_CHAINED_BASELINES = frozenset({"B4"})
 
 # Canonical attack (locked, §5): Contain — the wielder — executes the
 # high-consequence action. Only the credential differs across baselines.
@@ -179,6 +185,60 @@ def run(
     }
 
 
+def _tamper_entry(entry: dict) -> dict:
+    """Return a copy of `entry` with its claimed_actor flipped — a
+    plausible post-hoc rewrite (an adversary hiding who acted). Used to
+    inject a tamper the chain must catch. Pure: does not mutate input."""
+    rewritten = dict(entry)
+    rewritten["claimed_actor"] = "agent:enrich-rewritten"
+    return rewritten
+
+
+def measure_lis(
+    baseline: str,
+    entries: list[dict],
+    tamper_indices: list[int] | None = None,
+) -> LisResult:
+    """Measure the Log Integrity Score for `baseline` (threat-model-v2.md
+    §4.2 / §6.2).
+
+    The harness writes `entries` to the baseline's log, then rewrites the
+    entries at `tamper_indices` (default: the first entry) AFTER commit,
+    and asks the log whether it can detect the rewrite.
+
+    - Hash-chained baselines (B4): each entry is chained; the rewrite
+      breaks the link at its index, so verify() flags it. LIS = 1.0.
+    - All other baselines: a plain append-only log with no chain; the
+      rewrite is silent. detected = [], LIS = 0.0 by definition (§4.2).
+
+    The logger key (B4) is generated inside the log object, held only here
+    in the parent harness — no agent or the orchestrator can sign a
+    replacement head (§6.1).
+    """
+    if not entries:
+        raise ValueError("measure_lis requires at least one entry to tamper")
+    if tamper_indices is None:
+        tamper_indices = [0]
+
+    if baseline not in _HASH_CHAINED_BASELINES:
+        # No integrity artifact: the rewrite happens and nothing notices.
+        return score_lis(tamper_indices, detected_indices=[])
+
+    log = TamperEvidentLog()
+    for entry in entries:
+        log.append(entry)
+    head_sig = log.sign_head()
+
+    # Post-hoc tamper: rewrite committed entries in place WITHOUT updating
+    # their stored chain hash (an attacker editing the log file cannot
+    # recompute the chain without breaking it — that is the whole point).
+    for i in tamper_indices:
+        log.entries[i] = _tamper_entry(log.entries[i])
+
+    detected = log.verify(head_signature=head_sig)
+    return score_lis(tamper_indices, detected_indices=detected)
+
+
 def verify_deterministic(
     baseline: str,
     k: int = 5,
@@ -252,3 +312,27 @@ def emit_curve(with_determinism_check: bool = True) -> dict:
         curve[baseline] = run(baseline)["result"]
     curve["ci_caveat"] = _CI_CAVEAT
     return curve
+
+
+def emit_lis_curve(n_entries: int = 5) -> dict:
+    """Produce the LIS curve across B1-B5 (threat-model-v2.md §6.2).
+
+    Each baseline logs `n_entries` synthetic action records, one entry is
+    rewritten post-commit, and LIS reports whether the rewrite is caught.
+    Prediction: only B4 (hash-chained) detects it (LIS = 1.0); B1-B3, B5
+    have no integrity artifact (LIS = 0.0).
+
+    The synthetic entries differ per index (distinct target) so a rewrite
+    is a genuine change, not a no-op that hashes identically.
+    """
+    entries = [
+        {
+            "claimed_actor": "agent:enrich",
+            "claimed_scope": "siem:write",
+            "command": "isolate_host",
+            "target": f"host-{i}",
+            "timestamp": _FIXED_TS + i,
+        }
+        for i in range(n_entries)
+    ]
+    return {b: measure_lis(b, entries) for b in ("B1", "B2", "B3", "B4", "B5")}

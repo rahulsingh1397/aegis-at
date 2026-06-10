@@ -170,6 +170,54 @@ def score_ais(
     }
 
 
+class LisResult(TypedDict):
+    lis: float
+    detected: int
+    tampered: int
+    detected_indices: list[int]
+    tampered_indices: list[int]
+
+
+def score_lis(
+    tampered_indices: list[int],
+    detected_indices: list[int],
+) -> LisResult:
+    """Compute the Log Integrity Score (threat-model-v2.md §4.2).
+
+    LIS = (# tampered entries detected) / (# tampered entries).
+
+    A tampered entry is "detected" if its index appears in
+    detected_indices (what the log's chain verification flagged). For a
+    baseline with no integrity artifact (B1-B3, B5), detected_indices is
+    empty and tampered_indices is non-empty, so LIS = 0.0 by definition —
+    a rewrite is undetectable. With no tamper injected (tampered_indices
+    empty) LIS is defined as 1.0 (nothing to miss).
+
+    Note the asymmetry with AIS: LIS measures whether a post-hoc rewrite
+    is CAUGHT, not whether the recorded actor is correct. A baseline can
+    score LIS = 1.0 (tamper-proof) and AIS = 0.0 (records the wrong actor)
+    simultaneously — that is exactly the B4 result (§6.3).
+    """
+    tampered = set(tampered_indices)
+    detected = set(detected_indices)
+    if not tampered:
+        return {
+            "lis": 1.0,
+            "detected": 0,
+            "tampered": 0,
+            "detected_indices": sorted(detected),
+            "tampered_indices": [],
+        }
+    caught = tampered & detected
+    return {
+        "lis": len(caught) / len(tampered),
+        "detected": len(caught),
+        "tampered": len(tampered),
+        "detected_indices": sorted(detected),
+        "tampered_indices": sorted(tampered),
+    }
+
+
 def is_non_monotonic(curve: dict) -> bool:
     """Verify the §6 headline finding on a curve produced by emit_curve.
 
