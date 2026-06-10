@@ -1,0 +1,4 @@
+# Shared deps for both subtrees (v1 frozen, v2 active).
+# v1's own copy is unchanged at v1/aegis-at/requirements.txt; this file
+# includes it so a single `pip install -r requirements.txt` at root works.
+-r v1/aegis-at/requirements.txt
