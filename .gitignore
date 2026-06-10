@@ -61,3 +61,17 @@ CLAUDE.md
 *.log
 Documents/InitialDocs/
 Documents/portfolio_blurbs.md
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Planning / working notes (not part of the public artifact)
+Documents/Paper/EDIT_PLAN_*.md
+
+# Third-party papers (copyrighted; keep local only)
+Documents/ResearchPapers/
