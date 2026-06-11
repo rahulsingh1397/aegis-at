@@ -2,3 +2,9 @@
 # v1's own copy is unchanged at v1/aegis-at/requirements.txt; this file
 # includes it so a single `pip install -r requirements.txt` at root works.
 -r v1/aegis-at/requirements.txt
+
+# Paper-figure build dependency (Documents/Paper/figures/make_figures.py).
+# NOT a test/runtime dep — the v2 suite passes without it. Pulled in here
+# so reproducers who want to regenerate the paper figures get it from a
+# single install command.
+matplotlib>=3.7
