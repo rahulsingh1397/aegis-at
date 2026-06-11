@@ -300,3 +300,87 @@ considered and bounded.
 - **recorder_notes.md** — shared-clock design that enables the
   triple-pairing key.
 - **tools_notes.md** — Boundary-4 record schema this module consumes.
+
+---
+
+# ==== v2 additions ====
+
+*Implementation: `v2/aegis_at_v2/harness/scorer.py` (LIS) and
+`harness/sweep.py` (the curve emitters). Pre-registered in
+`threat-model-v2.md §4.2 / §6`. The AIS path above is ported verbatim and
+unchanged; v2 adds a second, parallel metric.*
+
+## score_lis() — the Log Integrity Score (§4.2)
+
+`score_lis(tampered_indices, detected_indices) -> LisResult`
+(scorer.py:181–218). Symmetric in spirit to `score_ais` but measuring a
+**different question**:
+
+```
+LIS = | tampered ∩ detected | / | tampered |
+```
+
+- `tampered_indices` — which committed log entries the harness rewrote
+  after the fact.
+- `detected_indices` — which the log's chain verification flagged
+  (`TamperEvidentLog.verify`, see `tamper_logV2.md`).
+
+Two boundary conventions, both deliberate:
+- **No tamper injected** (`tampered` empty) → LIS = 1.0 ("nothing to
+  miss", scorer.py:203–210).
+- **No integrity artifact** (B1–B3, B5: `detected` empty, `tampered`
+  non-empty) → LIS = 0.0 **by definition** — a rewrite is undetectable.
+
+`LisResult` (scorer.py:173–178) carries `lis`, `detected`, `tampered`, and
+both sorted index lists, for the same forensic-inspection reason the
+`Defect` list exists on the AIS side.
+
+## The AIS/LIS asymmetry is the point (§6.3)
+
+The docstring states it explicitly (scorer.py:196–199): a baseline can
+score **LIS = 1.0 and AIS = 0.0 simultaneously**. LIS asks "was a post-hoc
+rewrite caught?"; AIS asks "is the recorded actor correct?". B4 is exactly
+this: tamper-proof (LIS=1.0) yet mis-attributing (AIS=0.0), because the
+wrong actor was committed upstream at minting, before any logging layer
+saw the entry. The two metrics are scored and reported **separately** —
+never combined into one number — so this asymmetry stays visible. A
+reviewer who expects "tamper-evident ⇒ trustworthy attribution" is exactly
+who this separation is for.
+
+## Why LIS is a pure function (no log object dependency)
+
+`score_lis` takes two index lists, not a `TamperEvidentLog`. The tamper
+injection and `verify()` happen in the harness/sweep layer; the scorer
+only divides. This mirrors v1's "scorer is pure computation, harness owns
+orchestration" decision — the scorer never reaches into the log, the same
+way it never reaches into the tool or recorder. Keeps the scorer testable
+with synthetic index lists and free of integrity-artifact state.
+
+## sweep.py: measure_lis() + emit_lis_curve()
+
+The sweep gained an LIS pass parallel to the AIS curve: per baseline it
+writes entries, signs the head, rewrites a committed entry, calls
+`verify`, and feeds the indices to `score_lis`. `emit_lis_curve` produces
+the per-baseline LIS curve (B1–B3, B5 = 0.0; B4 = 1.0) alongside the AIS
+curve. The two curves are emitted from one sweep so the B4 AIS=0.0 /
+LIS=1.0 cell is produced by the same run — no chance of the two metrics
+coming from different configurations.
+
+## Note on is_non_monotonic() and Phase 4
+
+`is_non_monotonic` (scorer.py:221–242) still checks `b4 == b3` exactly. Its
+own docstring flags the evolution: while B4 ran B3's code path that
+equality was exact; now that B4 has a real hash-chained execution, the
+intended form is `abs(b4 - b3) < eps`. The AIS values are still exactly
+equal in the deterministic runs (B4 AIS = B3 AIS = 0.0 by §6.3), so the
+exact check still passes — but the tolerance form is the correct shape for
+the stochastic sweep (§8), where it should be updated. Flagged here so it
+isn't mistaken for an oversight (Rule 12 / surface conflicts).
+
+## v2 cross-references
+
+- **tamper_logV2.md** — `TamperEvidentLog.verify` that produces
+  `detected_indices`.
+- **threat-model-v2.md §4.2 / §6.2 / §6.3** — locked LIS definition and
+  the AIS/LIS asymmetry prediction.
+- **SweepNotes.md** — the curve-emission layer that drives both metrics.

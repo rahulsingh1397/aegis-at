@@ -277,3 +277,76 @@ would conflate two roles.
 - **tokens_notes.md** — the minting primitive this module wraps.
 - **recorder_notes.md** — thread-naming; why orchestrator calls are
   uninstrumented; the matching 2-hop true chain.
+
+---
+
+# ==== v2 additions ====
+
+*Implementation: `v2/aegis_at_v2/orchestrator/orchestrator.py`.
+Pre-registered in `threat-model-v2.md §5`. The v1 design above is
+unchanged; v2 adds an optional DPoP-binding path that is inert on
+B1–B4.*
+
+## The cnf-binding path (Baseline 5)
+
+`mint_delegated_token` gains four keyword-only, defaulted parameters:
+`cnf=None, proof=None, replay_cache=None, now=None`
+(orchestrator.py:33–38). The v1 positional signature
+(`current_token, new_actor, narrowed_scope, audience`) is untouched, so
+every B1–B4 caller is unaffected.
+
+When `cnf is None` (the B1–B4 default), the function does exactly what v1
+did: human-principal check, then `exchange_token(...)`. The new code is
+skipped entirely. **This is the INV-6 guarantee** — B5 differs from B3/B4
+by a flag value, not a code fork.
+
+When `cnf` is set (B5):
+
+1. The orchestrator REQUIRES `proof` and `replay_cache`; absent either, it
+   raises `ValueError` (orchestrator.py:86–91). You cannot ask for a bound
+   token without presenting the proof context.
+2. It calls `dpop.verify_proof(...)` against the **token endpoint**
+   (`TOKEN_ENDPOINT_HTU`, not the tool's htu) before binding
+   (orchestrator.py:92–100). This verifies the *receiving* agent actually
+   holds the key named by `cnf`.
+3. Only then does it hand `cnf` to `exchange_token(..., cnf=cnf)`
+   (orchestrator.py:104), which stamps the RFC 7800 confirmation claim.
+
+## Why the proof-before-bind check is the load-bearing half
+
+This is the mechanism that makes the executor obtain a token bound to ITS
+OWN key. The point of B5 is that Contain ends up named as current actor.
+That only works if an agent **cannot** acquire a token bound to a key it
+does not possess — otherwise Contain could request a token bound to
+Enrich's key and the lift would reappear one layer up. The
+proof-before-bind check forecloses that: to get a token with
+`cnf = jkt(K)`, you must sign the mint request's proof with `K`. Combined
+with the tool's proof-before-act check (`siem_action.md` v2 addition), the
+binding is enforced at both endpoints — fraudulent bind rejected at the
+orchestrator, lifted token rejected at the tool.
+
+## What did NOT change (deliberately)
+
+- The orchestrator still adds exactly one validation of its own beyond
+  `exchange_token` — the human-principal check. DPoP verification is
+  delegated to `dpop.verify_proof`; the orchestrator composes, it does not
+  re-implement crypto (same discipline as wrapping `exchange_token`
+  instead of re-minting).
+- The orchestrator still does **not** appear in the act chain. `cnf` binds
+  the minted token to the receiver's key; it does not add a hop.
+- `audience` is still accepted-but-not-enforced (v1 §7 deferred item,
+  unchanged).
+- INV-5 holds: the orchestrator behaves correctly; the §5.2 lift is
+  constructed by the harness pairing a key with the wrong token, not by
+  any orchestrator misbehavior.
+
+## v2 cross-references
+
+- **dpop_v2.md** — `verify_proof`, the htm/htu endpoint scoping, the
+  replay cache.
+- **tokens.md** — the `cnf` parameter on `exchange_token` this layer
+  drives.
+- **siem_action.md** (v2 addition) — the matching proof-before-act check
+  at the tool.
+- **threat-model-v2.md §5.1–§5.3** — the locked mechanism and B5=1.0
+  prediction.

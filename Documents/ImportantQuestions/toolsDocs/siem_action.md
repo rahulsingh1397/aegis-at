@@ -372,3 +372,71 @@ Statelessness is cleaner.
 
 ---
 
+# ==== v2 additions ====
+
+*Implementation: `v2/aegis_at_v2/tools/siem_action.py`. Pre-registered in
+`threat-model-v2.md §5`. Two changes from v1: package-absolute imports
+(for spawn re-import), and an optional DPoP proof-before-act check. The
+five Boundary-3 checks and the apikey/JWT branching are unchanged.*
+
+## The proof-before-act check (Baseline 5)
+
+`siem_action` gains three keyword-only, defaulted parameters:
+`proof=None, replay_cache=None, proof_window_s=...` (siem_action.py:79–81).
+The verification order is unchanged for B1–B4; the DPoP check is inserted
+**after** scope (check 4) and **before** identity resolution (check 5):
+
+```
+verify_token → chain integrity → scope → [if cnf: verify DPoP proof] → resolve identity
+```
+
+The trigger is the token itself: after `verify_token`, the tool reads
+`claims.get("cnf")` (siem_action.py:124). If the token carries a `cnf`
+binding (B5), the tool REQUIRES a `proof` and `replay_cache` — absent
+either, it raises `dpop.DPoPError` (siem_action.py:126–130) — and calls
+`dpop.verify_proof` against the **tool endpoint** (`RESOURCE_HTU`) with
+`cnf["jkt"]` as the bound thumbprint (siem_action.py:131–139). If the
+token has no `cnf` (B1–B4), the block is skipped entirely and `proof` is
+ignored. INV-6 holds: the B1–B4 path is the v1 path.
+
+## Why this check sits before identity resolution
+
+It is what rejects a **lifted token**. The §5.2 attack is Contain
+presenting Enrich's bound token. By the time the tool reaches check 5 it
+would resolve `act.sub = enrich` and faithfully record the wrong actor —
+the v1 failure. The proof check fires first: Contain cannot sign a proof
+under Enrich's key, so `verify_proof` raises `ProofBindingError`
+(`jkt(proof) != cnf.jkt`) and the call never reaches identity resolution.
+No record is written for a lifted token. To act, Contain must present its
+*own* bound token, whose `act.sub` is Contain — and *then* check 5
+records the executor correctly. That is the whole B5 recovery, expressed
+as one gate placed at the right point in the pipeline.
+
+## What did NOT change
+
+- The five Boundary-3 checks, their ownership split (PyJWT for
+  signature/expiry; tool for chain/scope/identity), and
+  `resolve_identity = actor_chain(claims)[0]` (INV-2) are identical to v1.
+- The apikey branch (Baselines 1–2: dict credential → scope gate only,
+  `claimed_principal_chain = None`) is unchanged (siem_action.py:105–115)
+  and now mirrors the recorder's credential-aware ground-truth chain.
+- The tool is still **stateless** about logs (returns the record; the
+  harness accumulates). The one piece of state DPoP needs — the replay
+  cache — is *passed in* by the harness, not held by the tool, preserving
+  statelessness and keeping the cache in the parent process (INV-4
+  isolation pattern).
+- Identity is still read ONLY from the verified `act` claim; the proof
+  authenticates *key possession*, it is never read as identity (INV-2 /
+  INV-4).
+
+## v2 cross-references
+
+- **dpop_v2.md** — `verify_proof` checks, `RESOURCE_HTU`, replay cache.
+- **orchestrator_notes.md** (v2 addition) — the matching proof-before-bind
+  check at the mint endpoint.
+- **recorder_notes.md** (v2 addition) — `true_actor` from the kernel PID;
+  the matching credential-aware true chain.
+- **threat-model-v2.md §5.1–§5.2** — locked mechanism and lift rejection.
+
+---
+

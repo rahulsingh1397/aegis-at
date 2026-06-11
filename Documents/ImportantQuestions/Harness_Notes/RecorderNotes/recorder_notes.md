@@ -1,5 +1,17 @@
 # Recorder Notes — aegis-at/harness/recorder.py
 
+> **Chain-shape correction (applies to the v1 sections below):** early drafts
+> of these notes — and the sketch below — show a 3-hop
+> `[true_actor, "agent:orchestrator", "human:analyst"]` chain. That was
+> corrected during the v1 build: **the orchestrator does NOT appear in the
+> chain** (it is a stateless minting endpoint, not a delegated principal —
+> RFC 8693's `act` records no hop for it), so the shipped v1 recorder writes
+> the 2-hop `[true_actor, "human:analyst"]`. See `orchestrator_notes.md`
+> ("Chain shape") and threat-model.md §4/§5 for the full rationale; the
+> mis-modeled hop is itself discussed in the v1 paper as evidence for the
+> thesis. The 3-hop text below is retained as the historical record of the
+> pre-correction draft.
+
                                         Working notes for the ground-truth recorder. The recorder is the most
                                         INV-sensitive module in the project — INV-4 is its entire reason to
                                         exist — so we lock the design here before writing code.
@@ -104,6 +116,12 @@ Three axes, examined for v1:
                                         This is *observed* (the harness sees what's being requested), not *claimed* (the token doesn't carry a command field). INV-4 holds.
 
 ### `true_principal_chain` is the §4-schema 3-hop list
+> **[SUPERSEDED — see correction at the top of this file.]** The shipped v1
+> chain is the 2-hop `[true_actor, "human:analyst"]`; the orchestrator hop
+> below was removed before the recorder was built. The shape *argument*
+> (matching shapes across claimed/true so a sibling-impersonation defect is a
+> clean first-element mismatch, not a length mismatch) survives the
+> correction unchanged — it just applies to 2-hop lists.
 
                                         Per the threat model's locked §4 schema, the true chain is `[true_actor, "agent:orchestrator", "human:analyst"]` — three hops from immediate actor to root principal. An earlier draft of this
                                         notes file proposed a one-element chain `[true_actor]`; that contradicted §4 and was corrected before the recorder build.
@@ -204,3 +222,85 @@ Three axes, examined for v1:
 - **policy_notes.md**: the recorder consumes `scope_for_command()`.
 - **tools_notes.md**: lists the recorder's INV-4 obligation as a
   forward hook from the tool.
+
+---
+
+# ==== v2 additions ====
+
+*Implementation: `v2/aegis_at_v2/harness/recorder.py`. Pre-registered in
+`threat-model-v2.md §3`. This section records what changed from the v1
+design above; everything not contradicted here still holds.*
+
+## The proxy is gone: true_actor now comes from the OS process
+
+The single most important v2 change. v1's "Process boundary" axis used
+`threading.current_thread().name` as a proxy and conceded the weakness in
+§II.8.9 (an agent that renamed its thread mid-call could spoof ground
+truth). v2 removes the proxy.
+
+The recorder no longer reads any thread or process field itself. Instead,
+`true_actor` is **passed in** by the agent-process kernel
+(`harness/agent_proc.py`), which resolved it from the OS-assigned
+`proc.pid` it registered at spawn — before the agent's user code ran. The
+wrapped handler's new signature is `(true_actor, command, target, token)`
+(recorder.py:45), matching the kernel's `tool_handler` contract.
+
+**This is not an INV-4 regression even though `true_actor` is now a
+parameter.** In v1 the rejected alternative was an *agent-supplied*
+`true_actor=` argument — the caller naming itself. Here the value is
+supplied by the **kernel** from the OS, cross-checked against the
+message's self-reported PID (fail loud on mismatch), and the agent
+physically cannot reach the registry. The recorder trusts a
+*harness*-resolved field, never an *agent*-resolved one. The "v1a vs
+explicit-parameter" debate in the Locked-decisions section is resolved in
+v2 by a third option that didn't exist single-process: the parameter is
+filled by the OS via the kernel, so it has the explicit-parameter's
+simplicity AND the process-boundary's integrity. See `agent_proc_v2.md`.
+
+## Causal precedence is now stronger
+
+v1 recorded ground truth *before the tool verified*. v2 keeps that (the
+recorder appends, then forwards, recorder.py:59–86) AND adds an earlier
+ordering: the kernel registered the PID *before serving the agent's first
+message*. Ground truth's identity is fixed before the agent can issue any
+instruction at all.
+
+## Chain shape is credential-aware (the one new branch)
+
+`true_principal_chain` is now `None` for an opaque per-agent credential (a
+dict — Baselines 1–2) and `[true_actor, "human:analyst"]` for a JWT
+(Baselines 3+) (recorder.py:70–72). This mirrors the claimed side in
+`siem_action` (apikey → `claimed_principal_chain=None`; JWT → 2-hop
+chain), so a B1/B2 match is `None == None` and a B3+ match is list
+equality. Discrimination is purely on credential **structure**
+(`isinstance(token, dict)`); `true_actor` still comes only from the kernel
+PID, so INV-4 holds — the recorder reads the token's *shape* to pick the
+chain format, never its *contents* to derive identity.
+
+## Clock injection preserved for triple-pairing
+
+The recorder still pins one timestamp and passes `now_fn=lambda: ts` into
+the tool (recorder.py:83), so the claimed and ground-truth records carry
+the identical float — the load-bearing property the scorer's
+(command, target, timestamp) pairing depends on. DPoP context (`proof`,
+`replay_cache`) is threaded straight through to the tool unchanged
+(recorder.py:84–85); the recorder does not inspect it.
+
+## v2 INV-4 walkthrough (re-affirmed)
+
+All three axes are now **real**, not argued: process boundary (OS
+subprocess), credential isolation (per-agent Pipe, child end only, plus
+the harness-held ground-truth log), causal precedence (register before
+serve). The two v1 open questions — "multiprocessing might need a lock on
+the log lists" and "true process boundary in v2" — are both resolved: each
+agent is served synchronously by its own kernel loop, and the boundary is
+real.
+
+## v2 cross-references
+
+- **agent_proc_v2.md** — the kernel that resolves and supplies
+  `true_actor`.
+- **threat-model-v2.md §3** — the locked §3.1 regression and §3.2 spoof
+  predictions.
+- **siem_action.md** (v2 addition) — the matching credential-aware claimed
+  chain.
