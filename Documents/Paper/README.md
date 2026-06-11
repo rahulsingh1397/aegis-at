@@ -1,77 +1,108 @@
-# AEGIS-AT — Research Paper
+# AEGIS-AT — Papers
 
-This directory holds the AEGIS-AT benchmark paper in three forms.
+This directory holds the AEGIS-AT benchmark papers, organized to mirror the
+repository's `v1/` (frozen) / `v2/` (active) split.
 
-| File | What it is | Use it for |
-| :--- | :--- | :--- |
-| [`aegis-at.tex`](./aegis-at.tex) | Canonical LaTeX source (self-contained, standard packages) | arXiv / conference submission; the citable artifact |
-| [`aegis-at.pdf`](./aegis-at.pdf) | Compiled output (17 pp., US-letter) | Reading / circulation |
-| [`aegis-at.md`](./aegis-at.md) | GitHub-rendered Markdown companion | Browsing on GitHub; quick reference |
+| Version | Path | Title | Length | Status |
+| :---: | :--- | :--- | :---: | :--- |
+| **v1** | [`v1/aegis-at.tex`](./v1/aegis-at.tex) ·  [`v1/aegis-at.pdf`](./v1/aegis-at.pdf) | *AEGIS-AT: Measuring Attribution Integrity Under Sibling Impersonation in Multi-Agent Delegation* | 17 pp | Frozen with [`v1/`](../../v1/) (git tag `v1.0.0`) |
+| **v2** | [`v2/aegis-at-v2.tex`](./v2/aegis-at-v2.tex) ·  [`v2/aegis-at-v2.pdf`](./v2/aegis-at-v2.pdf) | *AEGIS-AT v2: Does Sender-Constraint Recover Attribution?* | 14 pp | Active; extends v1 with Baseline 5 (DPoP), LIS, T2, stochastic CIs |
 
-The `.tex` is the source of truth. The `.md` mirrors its content for GitHub
-rendering (with MathJax for the metric definitions) but is not the citable form.
+`.tex` is the citable source of truth for each version. v1 also keeps a
+GitHub-rendered [`aegis-at.md`](./v1/aegis-at.md) companion.
 
 ---
 
-## Build the PDF
+## Layout
 
-The paper compiles with any standard TeX distribution (TeX Live, MiKTeX). All
-packages used are in the standard distribution; no custom `.sty` or `.bib` files
-are needed (the bibliography is a self-contained `thebibliography`).
-
-### With `make` (recommended)
-
-```bash
-cd Documents/Paper
-make          # build aegis-at.pdf (runs pdflatex 3x: body, TOC, references)
-make clean    # remove build artifacts (.aux .log .out .toc, keep .pdf)
-make purge    # also remove the generated .pdf
+```
+Documents/Paper/
+├── README.md                  this file — directory index
+├── v1/
+│   ├── aegis-at.tex           frozen v1 LaTeX source
+│   ├── aegis-at.pdf           compiled v1 (17 pp)
+│   ├── aegis-at.md            GitHub-rendered v1 companion
+│   ├── Makefile               builds aegis-at.pdf
+│   └── EDIT_PLAN_sentinelagent_relatedwork.md   v1 editorial planning notes
+└── v2/
+    ├── aegis-at-v2.tex        v2 LaTeX source
+    ├── aegis-at-v2.pdf        compiled v2 (14 pp)
+    ├── Makefile               builds aegis-at-v2.pdf; also `make figures`
+    └── figures/
+        ├── make_figures.py    regenerates the 3 figures from the live harness
+        ├── fig_ais_curve.{pdf,png}
+        ├── fig_ais_lis.{pdf,png}
+        └── fig_stochastic_ci.{pdf,png}
 ```
 
-### Manually
+The v2 paper uses `\graphicspath{{figures/}}`, so its `.tex` and
+`figures/` are intentionally co-located.
+
+---
+
+## Building
+
+Both papers compile with any standard TeX distribution (TeX Live, MiKTeX).
+Each uses only standard packages — no custom `.sty` / `.bib`; the bibliography
+is a self-contained `thebibliography`.
 
 ```bash
-cd Documents/Paper
-pdflatex -interaction=nonstopmode aegis-at.tex
-pdflatex -interaction=nonstopmode aegis-at.tex   # resolve TOC + \ref / \cite
-pdflatex -interaction=nonstopmode aegis-at.tex   # settle cross-references
+# v1 (frozen — should never change)
+cd Documents/Paper/v1 && make           # builds aegis-at.pdf
+
+# v2 (active)
+cd Documents/Paper/v2 && make figures   # regenerate figures from the harness
+make                                    # then build aegis-at-v2.pdf
 ```
 
-Three passes are needed because the document has a table of contents and internal
-cross-references; one pass leaves them unresolved.
+Manually (two passes resolve the TOC + cross-references):
+
+```bash
+cd Documents/Paper/v2
+pdflatex -interaction=nonstopmode aegis-at-v2.tex
+pdflatex -interaction=nonstopmode aegis-at-v2.tex
+```
+
+### v2 figure regeneration
+
+The figures are **not hand-drawn**; they are produced from the live v2
+harness — `sweep.emit_curves()`, `sweep.emit_lis_curve()`, and
+`stochastic.stochastic_sweep()`. So the numbers in the paper cannot drift
+from the code:
+
+```bash
+python Documents/Paper/v2/figures/make_figures.py
+```
+
+This writes both `.pdf` (vector, for the LaTeX build) and `.png` (raster,
+for the README and GitHub) alongside the script. The script anchors all
+paths off its own location, so it works regardless of `cwd`.
 
 ### No LaTeX installed?
 
-- **Overleaf** — create a blank project, paste `aegis-at.tex`, click *Recompile*.
-- **arXiv** — upload `aegis-at.tex`; arXiv compiles source on its end.
-- **MiKTeX (Windows)** — `winget install MiKTeX.MiKTeX`, then enable on-the-fly
-  package installation once: `initexmf --set-config-value "[MPM]AutoInstall=1"`.
-  Fresh installs may place `pdflatex` under
-  `%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\` rather than on `PATH`.
-- **TeX Live (Linux/macOS)** — `apt install texlive-latex-recommended
-  texlive-latex-extra` (or `brew install --cask mactex-no-gui`).
+- **Overleaf** — paste the relevant `.tex` into a blank project; click *Recompile*.
+- **arXiv** — upload the `.tex`; arXiv compiles on its end.
+- **TeX Live (Linux/macOS)** — `apt install texlive-latex-recommended texlive-latex-extra` or `brew install --cask mactex-no-gui`.
+- **MiKTeX (Windows)** — `winget install MiKTeX.MiKTeX` then `initexmf --set-config-value "[MPM]AutoInstall=1"`.
 
 ---
 
-## Before submission
+## Pre-registration and reproducibility
 
-- [x] **Author block** — finalized (*Rahul Singh, Independent researcher, Jersey
-      City, NJ*; email + GitHub). Add co-authors/affiliation if that changes.
-- [x] **Citation check** — all 11 references verified against live primary sources
-      (June 2026). The arXiv *Misattribution Gap* (2605.22842), NIST NCCoE, OpenID,
-      CSA, HAID, Clinejection, and Salesloft Drift entries all resolve; two URLs
-      were corrected in the process (NIST → `nccoe.nist.gov` canonical; Snyk
-      Clinejection → `cline-supply-chain-attack-prompt-injection-github-actions`).
-      Note: [`../References/References.md`](../References/References.md) still
-      carries the older Snyk slug — reconcile if you want the repo fully consistent.
-- [ ] **Numbers** — every quantitative claim (AIS curve, defect breakdown, 59 tests)
-      matches the committed result in
-      [`../ThreatModel/threat-model.md`](../ThreatModel/threat-model.md) §6 and the
-      test suite. Re-run `pytest tests/core` if the code changes.
+Every quantitative claim in the v2 paper — the AIS curve on both topologies,
+the LIS curve, every stochastic cell — is asserted in the v2 test suite
+against a value pre-registered in
+[`Documents/ThreatModel/ThreatModelv2/threat-model-v2.md`](../ThreatModel/ThreatModelv2/threat-model-v2.md)
+(plus its [`threat-model-v2.1.md`](../ThreatModel/ThreatModelv2/threat-model-v2.1.md)
+amendment), both SHA-256-locked by the CI gate. A contradicted prediction is
+reported as a finding, not reconciled (INV-7).
+
+The v1 paper's numbers are similarly fixed by `Documents/ThreatModel/threat-model.md`
+and the 59 frozen tests under `v1/tests/core/`.
 
 ---
 
 ## License
 
-Documentation in this directory is licensed **CC BY 4.0**, consistent with the rest
-of `Documents/`. See [`../LICENSE-docs`](../LICENSE-docs).
+Documentation in this directory is licensed **CC BY 4.0**, consistent with the
+rest of `Documents/`. See [`../LICENSE-docs`](../LICENSE-docs).
