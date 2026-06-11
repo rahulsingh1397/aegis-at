@@ -25,6 +25,7 @@ from aegis_at_v2.harness.scorer import score_ais, score_lis, ScorerResult, LisRe
 from aegis_at_v2.harness.tamper_log import TamperEvidentLog
 from aegis_at_v2.harness import agent_proc
 from aegis_at_v2.harness import agent_bodies
+from aegis_at_v2.topologies import get_topology, TOPOLOGY_NAMES
 
 # Only Baseline 4 ships a hash-chained, tamper-evident log (§6.1). Every
 # other baseline writes a plain append-only log with no integrity artifact,
@@ -41,6 +42,7 @@ _FIXED_TS = 1_700_000_000.0
 
 class RunResult(TypedDict):
     baseline: str
+    topology: str  # "T1" / "T2" — which re-delegation depth this run used
     result: ScorerResult
     claimed: list  # claimed action-log records
     truth: list  # ground-truth records
@@ -50,7 +52,32 @@ class RunResult(TypedDict):
     # which has no defects to embed them in.
 
 
-def _credential_for(baseline: str, now: float, replay_cache=None):
+def _delegated_chain(topology: str) -> str:
+    """Build the unbound re-delegation token Contain presents under B3/B4.
+
+    The chain DEPTH is data, declared by the topology (threat-model-v2.md
+    §7); this function just mints one nested re-delegation per declared
+    requester hop. The deepest requester becomes the current actor
+    (RFC 8693 §4.1) and therefore the claimed actor:
+
+      T1 (v1): [enrich] -> chain [enrich, analyst], claimed actor = enrich.
+      T2:      [enrich, investigator] -> chain [investigator, enrich,
+               analyst], claimed actor = investigator.
+
+    In every topology the claimed actor is a REQUESTER, never the executor
+    (Contain) — the gap does not heal with depth (§7.2). Adding a topology
+    is adding a hop list under topologies/, not branching here (INV-6).
+    """
+    topo = get_topology(topology)
+    token = mint_initial_token("human:analyst", "siem:read siem:write")
+    for actor in topo.redelegation_chain:
+        token = mint_delegated_token(
+            token, actor, "siem:write", audience="siem_action"
+        )
+    return token
+
+
+def _credential_for(baseline: str, now: float, replay_cache=None, topology: str = "T1"):
     """The per-baseline credential — the ONLY thing that varies (INV-6).
 
     Returns (credential, executor_body, body_extra_args):
@@ -59,14 +86,16 @@ def _credential_for(baseline: str, now: float, replay_cache=None):
     B1: shared opaque credential (all agents act under one identity).
     B2: per-agent opaque credential (executor authenticates as itself).
     B3/B4: orchestrator-minted re-delegation JWT — the orchestrator
-        honestly names Enrich (the requester) as current actor; Contain
-        (the wielder) presents an UNBOUND token. B4 == B3 at minting;
+        honestly names the deepest REQUESTER as current actor; Contain
+        (the wielder) presents an UNBOUND token. Chain depth is set by
+        `topology` (see _delegated_chain). B4 == B3 at minting;
         tamper-evidence is at the log boundary, not here (§6).
-    B5: sender-constrained. Enrich's bound token cannot be wielded by
-        Contain (the lift is rejected, §5.2), so Contain obtains its OWN
-        token from the orchestrator — bound to Contain's key, naming
-        Contain as current actor. The executor signs a DPoP proof at
-        call time. claimed actor then tracks the executor (§5.3).
+    B5: sender-constrained. The unbound chain cannot be wielded by Contain
+        (the lift is rejected, §5.2), so Contain obtains its OWN token —
+        bound to Contain's key, naming Contain, rooted directly at the
+        analyst (its LEGITIMATE 2-hop chain, independent of the attack
+        path's depth — so B5 is topology-independent, §7.2). The executor
+        signs a DPoP proof at call time; claimed actor tracks the executor.
     """
     if baseline == "B1":
         cred = {"format": "apikey", "agent": "svc:soar", "scope": "siem:write"}
@@ -75,10 +104,7 @@ def _credential_for(baseline: str, now: float, replay_cache=None):
         cred = {"format": "apikey", "agent": "agent:contain", "scope": "siem:write"}
         return cred, agent_bodies.executor_body, ()
     if baseline in ("B3", "B4"):
-        root = mint_initial_token("human:analyst", "siem:read siem:write")
-        cred = mint_delegated_token(
-            root, "agent:enrich", "siem:write", audience="siem_action"
-        )
+        cred = _delegated_chain(topology)
         return cred, agent_bodies.executor_body, ()
     if baseline == "B5":
         # The executor (Contain) holds its own DPoP key. It obtains a
@@ -117,6 +143,7 @@ def run(
     baseline: str,
     now_fn: Callable[[], float] = time.time,
     executor_body=None,
+    topology: str = "T1",
 ) -> RunResult:
     """Run one canonical execution of the §5 attack for `baseline`.
 
@@ -125,6 +152,12 @@ def run(
     is injected (default wall clock) and stays in the PARENT process —
     the recorder stamps the timestamp at the harness, so determinism is
     independent of subprocess scheduling.
+
+    topology (threat-model-v2.md §7) sets the re-delegation chain depth
+    for B3/B4 (T1 = v1's 2-agent chain, T2 = 3-agent linear chain). B1,
+    B2, and B5 are topology-independent by construction, so passing a
+    topology changes only the B3/B4 claimed actor/chain — not the curve
+    shape (§7.2). Default T1 keeps every v1-era caller unchanged.
 
     executor_body overrides the per-baseline default body (e.g. the §3.2
     spoof test swaps in the spoofing body); when None, the body chosen by
@@ -145,7 +178,7 @@ def run(
     replay_cache = dpop.ReplayCache()
 
     credential, default_body, body_extra = _credential_for(
-        baseline, now, replay_cache=replay_cache
+        baseline, now, replay_cache=replay_cache, topology=topology
     )
     body = executor_body if executor_body is not None else default_body
 
@@ -179,6 +212,7 @@ def run(
 
     return {
         "baseline": baseline,
+        "topology": topology,
         "result": result,
         "claimed": claimed_log,
         "truth": gt_log,
@@ -243,6 +277,7 @@ def verify_deterministic(
     baseline: str,
     k: int = 5,
     now_fn: Callable[[], float] | None = None,
+    topology: str = "T1",
 ) -> bool:
     """Run `baseline` k times under a fixed clock; assert all k runs
     produce byte-identical (claimed, truth) records.
@@ -252,17 +287,19 @@ def verify_deterministic(
 
     now_fn defaults to the module's fixed clock (lambda: _FIXED_TS).
     Exposed as a parameter so tests can inject a deliberately drifting
-    clock to prove the check actually catches divergence.
+    clock to prove the check actually catches divergence. topology is
+    threaded through so determinism is a checked property of T2 as well
+    as T1 (the stochastic sweep, §8, relies on it for both).
     """
     if now_fn is None:
 
         def now_fn():
             return _FIXED_TS
 
-    reference = run(baseline, now_fn=now_fn)
+    reference = run(baseline, now_fn=now_fn, topology=topology)
 
     for i in range(1, k):
-        current = run(baseline, now_fn=now_fn)
+        current = run(baseline, now_fn=now_fn, topology=topology)
         for side in ("claimed", "truth"):
             ref_records = reference[side]
             cur_records = current[side]
@@ -286,8 +323,9 @@ _CI_CAVEAT = (
 )
 
 
-def emit_curve(with_determinism_check: bool = True) -> dict:
-    """Produce the five-point curve (B1-B5) as a JSON-serializable dict.
+def emit_curve(with_determinism_check: bool = True, topology: str = "T1") -> dict:
+    """Produce the five-point curve (B1-B5) for one topology as a
+    JSON-serializable dict.
 
     Composes run() over B1-B5; optionally gates on verify_deterministic
     first (default True) so the curve is only emitted once determinism
@@ -295,7 +333,9 @@ def emit_curve(with_determinism_check: bool = True) -> dict:
     raises AssertionError before any AIS values are produced.
 
     B5 (threat-model-v2.md §5) extends the v1 four-point curve: the
-    sender-constraint layer hypothesized to recover attribution.
+    sender-constraint layer hypothesized to recover attribution. topology
+    (§7) selects the re-delegation depth; the predicted curve is identical
+    across topologies (§7.2), which emit_curves() lets a caller verify.
 
     The ci_caveat string is part of the schema specifically so a
     downstream consumer that reads this dict and writes a report cannot
@@ -305,13 +345,28 @@ def emit_curve(with_determinism_check: bool = True) -> dict:
     as scorer.is_non_monotonic(curve), a named function with the
     predicate pinned in one docstring (single source of truth).
     """
-    curve: dict = {}
+    curve: dict = {"topology": topology}
     for baseline in ("B1", "B2", "B3", "B4", "B5"):
         if with_determinism_check:
-            verify_deterministic(baseline)
-        curve[baseline] = run(baseline)["result"]
+            verify_deterministic(baseline, topology=topology)
+        curve[baseline] = run(baseline, topology=topology)["result"]
     curve["ci_caveat"] = _CI_CAVEAT
     return curve
+
+
+def emit_curves(with_determinism_check: bool = True) -> dict:
+    """Produce the B1-B5 curve for every registered topology (T1, T2).
+
+    Returns {topology_name: curve}. The §7.2 prediction is that all
+    topologies yield the same curve shape (B1=0, B2=1.0, B3=0, B4=0,
+    B5=1.0) — the gap does not heal with chain depth. A caller compares
+    the curves; a divergence is a finding (INV-7), not something to
+    reconcile silently.
+    """
+    return {
+        name: emit_curve(with_determinism_check=with_determinism_check, topology=name)
+        for name in TOPOLOGY_NAMES
+    }
 
 
 def emit_lis_curve(n_entries: int = 5) -> dict:

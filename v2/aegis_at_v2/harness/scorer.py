@@ -218,25 +218,29 @@ def score_lis(
     }
 
 
-def is_non_monotonic(curve: dict) -> bool:
+def is_non_monotonic(curve: dict, eps: float = 1e-9) -> bool:
     """Verify the §6 headline finding on a curve produced by emit_curve.
 
     Concretely:
       - B2 > B1: per-agent identity beats shared account
       - B2 > B3: delegation REGRESSES attribution relative to per-agent identity
-      - B4 == B3: tamper-evident logging is orthogonal to attribution (§6)
+      - B4 ≈ B3: tamper-evident logging is orthogonal to attribution (§6)
 
     Returns True if the curve matches the prediction; False otherwise.
     A False return is a publishable finding — INV-7 binds §6's pre-registered
     predictions to whatever the measurement shows; a contradicted prediction
     is reported, not silenced.
 
-    B4 == B3 is exact while B4 runs B3's code path. When the hash-chained
-    log lands (Phase 4) and B4 has a separate execution, this evolves to
-    `abs(b4 - b3) < eps` for a small tolerance.
+    The B4≈B3 check uses `abs(b4 - b3) < eps` (default exact). Since Phase 4
+    B4 has a SEPARATE execution (its own hash-chained log) rather than
+    running B3's code path, equality is a measured result, not a structural
+    identity — so a tolerance is the correct shape. The stochastic sweep
+    (§8) reports sampled AIS where B3 and B4 may differ by sampling noise;
+    pass a wider eps there (e.g. a Wilson half-width) when comparing
+    estimates rather than the deterministic point values.
     """
     b1 = curve["B1"]["ais"]
     b2 = curve["B2"]["ais"]
     b3 = curve["B3"]["ais"]
     b4 = curve["B4"]["ais"]
-    return b2 > b1 and b2 > b3 and b4 == b3
+    return b2 > b1 and b2 > b3 and abs(b4 - b3) < eps
