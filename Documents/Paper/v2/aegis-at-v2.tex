@@ -98,7 +98,7 @@ proxy; PID-based attribution is unspoofable by an in-process rename.
 \textbf{(3)}~A real hash-chained, signed tamper-evident log and a new
 \textbf{Log Integrity Score} (\lis{}) make Baseline~4 concrete; \lis{}
 reaches $1.0$ (every tamper detected) while \ais{} stays $0.0$ --- a
-tamper-proof record of the \emph{wrong} actor. \textbf{(4)}~A second
+tamper-evident record of the \emph{wrong} actor. \textbf{(4)}~A second
 topology T2 (a 3-agent re-delegation chain) shows the gap \emph{does not
 heal with chain depth}: the curve is identical to the 2-agent T1, and at
 depth~2 the claimed actor is the deepest requester, never the executor.
@@ -141,7 +141,7 @@ standard provides no field for the executor.
 v1 was deliberately bounded and conceded four limitations plus one unmeasured
 fix: (a)~a thread-name proxy for process identity; (b)~a Baseline~4 that was
 attribution-only (the hash-chained log was not built); (c)~a single
-topology ($n=1$); (d)~categorical \ais{} ($\in\{0,1\}$) with degenerate
+topology (one tested configuration); (d)~categorical \ais{} ($\in\{0,1\}$) with degenerate
 confidence intervals; and the named-but-unmeasured fix, (e)~sender-constrained
 tokens (a hypothetical ``Baseline~5''). This paper closes all five.
 
@@ -159,7 +159,8 @@ Figure~\ref{fig:curve}.
 \centering
 \caption{The v2 Attribution Integrity Score across five baselines, measured
 identically on both topologies (T1: 2-agent; T2: 3-agent). Each baseline is
-a configuration flag over one codebase; only the credential differs.
+a configuration flag over one codebase; the attribution-relevant
+credential/proof path is the only thing that differs.
 Measured values reproduce the pre-registered prediction exactly.}
 \label{tab:curve}
 \begin{tabular}{clccc}
@@ -196,7 +197,7 @@ signed delegation is added (B3) and recovers when sender-constraint is added
   using OS process identity, removing v1's thread-name proxy and proven
   unspoofable by an in-process rename (\S\ref{sec:recorder}).
   \item \textbf{A second metric.} The Log Integrity Score (\lis{}), backed
-  by a real hash-chained signed log, demonstrating that B4 is tamper-proof
+  by a real hash-chained signed log, demonstrating that B4 is tamper-evident
   ($\lis{}=1.0$) yet still mis-attributing ($\ais{}=0.0$)
   (\S\ref{sec:lis}, \S\ref{sec:results}).
   \item \textbf{A second topology.} A 3-agent re-delegation chain (T2)
@@ -212,7 +213,7 @@ signed delegation is added (B3) and recovers when sender-constraint is added
 
 \paragraph{Scope and honesty up front.}
 v2 still concedes: only \dpop{} (not mutual-TLS, RFC~8705) is measured;
-$n=2$ topologies (linear only, no fan-in or cross-organization); scripted
+two topologies (linear only, no fan-in or cross-organization); scripted
 deterministic agents (no LLM in the loop); and a synthetic Bernoulli policy
 rather than real-world attack-frequency telemetry. These are deliberate
 boundaries defended in \S\ref{sec:validity}.
@@ -263,7 +264,7 @@ the tool call crosses the process boundary: the agent sends
 invokes the recorder and \siem{} on its behalf (\S\ref{sec:recorder}). The tool
 therefore executes inside the harness process. This is required for PID-based
 ground truth and is neutral to the comparison --- the verification logic and
-the presented credential are byte-identical to v1, and the claimed record still
+the presented credential are semantically identical to v1 on the B1--B4 path, and the claimed record still
 derives solely from the presented token --- but it is a real change to the
 substrate and we record it as a validity threat (\S\ref{sec:validity},
 item~6).
@@ -286,7 +287,8 @@ runs}, and resolves \code{true\_actor} from that registry. The agent's
 tool-call message also self-reports its PID, but only so the kernel can
 cross-check it and fail loud on a mismatch --- the resolved identity is always
 the kernel's, never the message's. The recorder thus reads identity from the
-operating system, set by the kernel, not from any agent-supplied field. The
+kernel's spawn-time PID registry (the PID is OS-assigned), not from any
+agent-supplied field. The
 three independence axes from v1 are now \emph{real} rather than argued: a true
 process boundary (a separate OS process), credential isolation (a per-agent
 pipe whose child end alone crosses the boundary), and causal precedence
@@ -301,7 +303,8 @@ executes in the harness process. Two consequences matter for validity.
 \emph{First}, the agent's private \dpop{} key never crosses the boundary: the
 call-time proof is signed \emph{inside} the agent process and only the signed
 proof is sent (\S\ref{sec:b5}). \emph{Second}, nothing the tool verifies or
-records changes --- the verification logic is byte-identical to v1, the claimed
+records changes --- the verification logic is semantically identical to v1 on the
+B1--B4 path, the claimed
 record derives solely from the presented token, and the true record solely from
 the kernel PID --- so centralizing tool execution puts the tool on the same
 side as the recorder without contaminating the claimed-vs-true comparison. We
@@ -388,14 +391,15 @@ chain link, and a head signature that no longer verifies.
 \lis(B) = \frac{\#\,\text{tampered entries detected by chain verification}}
 {\#\,\text{tampered entries}}.
 \]
-For a baseline with no integrity artifact (B1--B3, B5) there is no chain to
-verify, so a rewrite is undetectable: \lis{} is $0.0$ \emph{by definition}
+Under tamper injection (the reported experiments), a baseline with no
+integrity artifact (B1--B3, B5) has no chain to verify, so a rewrite is
+undetectable: \lis{} is $0.0$ \emph{by definition}
 rather than undefined --- the question ``was the tamper detected?'' has a
 well-defined answer (no), because a log with no integrity mechanism detects
 nothing. For B4, every injected tamper is caught and $\lis{}=1.0$.
 
 \paragraph{The load-bearing asymmetry.} \ais{} and \lis{} are orthogonal: a
-baseline can score $\lis{}=1.0$ (tamper-proof) and $\ais{}=0.0$ (records the
+baseline can score $\lis{}=1.0$ (tamper-evident) and $\ais{}=0.0$ (records the
 wrong actor) simultaneously, which is exactly B4 (Figure~\ref{fig:lis}). The
 wrong actor is committed upstream at minting, before any logging layer sees
 the entry, so a perfect tamper-evident log faithfully preserves a wrong
@@ -416,7 +420,7 @@ log preserves the wrong record. Generated from the live harness.}
 \label{sec:topology}
 % ===========================================================================
 
-v1's central conceded limitation was $n=1$. v2 adds a second topology, T2:
+v1's central conceded limitation was its single topology. v2 adds a second, T2:
 a linear re-delegation chain \code{Agent-Enrich}~$\to$~%
 \code{Agent-Investigator}~$\to$~\code{Agent-Contain}, two re-delegation hops.
 Investigator is a mid-chain agent that receives Enrich's escalation, makes
@@ -568,8 +572,9 @@ $p$ and topology (\code{curve\_shape\_invariant} returns \code{True}); $p$
 scales the denominator, not the correctness. Table~\ref{tab:stoch} shows
 representative T1 cells under \emph{both} denominators of \S\ref{sec:stochastic}:
 the adversarial-trigger denominator (escalated trials only) and the expanded
-denominator (all $N$ re-delegated containments, \S4.3). The two give identical
-point estimates --- confirming the \S4.3 prediction that the misattribution is
+denominator (all $N$ re-delegated containments, threat-model-v2.md~\S4.3). The
+two give identical point estimates --- confirming the threat-model~\S4.3
+prediction that the misattribution is
 latent in the re-delegation pattern, not created by the attacker --- while the
 expanded denominator's intervals are tighter because its size is always $N$.
 The low-frequency cells auto-escalate to $N=500$. Figure~\ref{fig:stoch} plots
@@ -581,7 +586,7 @@ the full grid.
 under both denominators. ``esc./$N$'' is the realized escalation count over the
 trial count; $\dagger$ marks cells that auto-escalated from $N=100$ to $N=500$
 because the $N=100$ adversarial half-width exceeded $0.1$. The point \ais{} is
-identical under both denominators (\S4.3); the expanded interval is tighter
+identical under both denominators (threat-model~\S4.3); the expanded interval is tighter
 (denominator $=N$). All values are reproducible from the fixed base seed
 \code{20260610}.}
 \label{tab:stoch}
@@ -623,8 +628,9 @@ topologies. The mechanism is precise --- the lift that constitutes the attack
 is rejected because Contain cannot prove possession of Enrich's key, forcing
 an execution-time re-exchange that names the executor. This converts v1's
 ``named fix'' into a measured one and localizes the missing layer exactly: not
-``log a different field'' (there is no such field) but ``bind the token to its
-holder so the executor must name itself.''
+``log a different field'' (there is no such field) but ``bind the token to the
+executor's key and require an execution-time re-exchange that names the
+executor.''
 
 \paragraph{The robustness changes strengthen, not weaken, the v1 finding.}
 A skeptic could have attributed v1's result to its thread-name proxy, its
@@ -654,7 +660,7 @@ B1/B3/B4 do not.
   standardized binding; they require TLS infrastructure and are predicted to
   behave identically (both close the unbound-bearer gap). Measuring them is a
   v3 ``Baseline~5b.''
-  \item \textbf{$n=2$ topologies, linear only.} T1 and T2 are linear chains.
+  \item \textbf{Two topologies, linear only.} T1 and T2 are linear chains.
   Fan-in (two agents re-delegating into one executor) and cross-organization
   delegation each add confounds --- concurrent-write log ordering, multiple
   trust domains --- and are deferred to v3.
@@ -676,7 +682,7 @@ B1/B3/B4 do not.
   from v1, where the agent's own thread called the tool. We argue this does not
   affect the result: the attack's injection, minting, and hand-off all precede
   the tool call; the tool's verification logic and the presented credential are
-  byte-identical to v1; the agent's \dpop{} private key never crosses the
+  semantically identical to v1 on the B1--B4 path; the agent's \dpop{} private key never crosses the
   boundary (the proof is signed in the agent process); and the claimed record
   still derives solely from the presented token while the true record derives
   solely from the kernel PID. What moved is the host process of an unchanged
@@ -718,7 +724,7 @@ sender-constrained tokens (\dpop{}) recover the Attribution Integrity Score to
 $1.0$ at Baseline~5, while a real process boundary, a real hash-chained log,
 a second topology, and real confidence intervals each leave the non-monotonic
 curve standing. The Log Integrity Score makes the negative result concrete --- a
-tamper-proof log of the wrong actor --- and the three-agent chain shows the gap
+tamper-evident log of the wrong actor --- and the three-agent chain shows the gap
 does not heal with depth. The attribution gap is structural; tamper-evidence
 and chain depth are orthogonal to it; and binding the token to its holder is
 the layer that closes it. As standards bodies make RFC~8693 the backbone of AI
