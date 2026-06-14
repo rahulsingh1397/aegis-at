@@ -16,8 +16,8 @@ abstract: >-
   attribution), adds a Log Integrity Score, a 3-agent multi-hop topology, and
   stochastic Wilson confidence intervals.
 license: Apache-2.0
-version: "v2.0.0"
-date-released: "2026-06-11"
+version: "v2.0.1"
+date-released: "2026-06-14"
 keywords:
   - multi-agent systems
   - AI agent security

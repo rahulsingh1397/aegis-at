@@ -1,0 +1,26 @@
+{
+  "title": "AEGIS-AT: Attribution Integrity Benchmark for Multi-Agent Delegation",
+  "description": "A reproducible, pre-registered adversarial benchmark measuring whether OAuth 2.0 Token Exchange (RFC 8693) delegation preserves audit attribution in multi-agent AI systems. v1 shows attribution regresses when delegation is added, because the standard records the agent that requested authority, not the one that executed it. v2 measures the standardized fix: sender-constrained tokens (DPoP / RFC 9449) recover attribution to AIS=1.0; it also adds a Log Integrity Score, a 3-agent multi-hop topology, and stochastic Wilson confidence intervals. Every value is pre-registered in a SHA-256-locked threat model before the measuring code was written. Code is licensed Apache-2.0; documentation CC BY 4.0.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    { "name": "Singh, Rahul", "affiliation": "Independent researcher" }
+  ],
+  "keywords": [
+    "multi-agent systems",
+    "AI agent security",
+    "attribution",
+    "non-repudiation",
+    "OAuth 2.0 Token Exchange",
+    "RFC 8693",
+    "DPoP",
+    "RFC 9449",
+    "sender-constrained tokens",
+    "proof-of-possession",
+    "confused deputy",
+    "delegation",
+    "audit logging",
+    "benchmark"
+  ]
+}
