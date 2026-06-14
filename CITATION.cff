@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: "AEGIS-AT: Attribution Integrity Benchmark for Multi-Agent Delegation"
+message: "If you use this software or its findings, please cite it."
+type: software
+authors:
+  - family-names: Singh
+    given-names: Rahul
+    # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"   # add once you register an ORCID (recommended)
+repository-code: "https://github.com/rahulsingh1397/aegis-at"
+abstract: >-
+  A reproducible, pre-registered adversarial benchmark measuring whether
+  OAuth 2.0 Token Exchange (RFC 8693) delegation preserves audit attribution
+  in multi-agent AI systems. v1 shows attribution regresses when delegation is
+  added (the standard records the requester, not the executor); v2 measures the
+  standardized fix (DPoP / RFC 9449 sender-constrained tokens recover
+  attribution), adds a Log Integrity Score, a 3-agent multi-hop topology, and
+  stochastic Wilson confidence intervals.
+license: Apache-2.0
+version: "v2.0.0"
+date-released: "2026-06-11"
+keywords:
+  - multi-agent systems
+  - AI agent security
+  - attribution
+  - non-repudiation
+  - RFC 8693
+  - DPoP
+  - sender-constrained tokens
+  - confused deputy
+  - benchmark
