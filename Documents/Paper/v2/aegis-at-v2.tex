@@ -269,6 +269,50 @@ derives solely from the presented token --- but it is a real change to the
 substrate and we record it as a validity threat (\S\ref{sec:validity},
 item~6).
 
+\subsection{OAuth 2.1: the gap is version-independent}
+The attribution gap is not an artifact of legacy OAuth~2.0. OAuth~2.1
+(\code{draft-ietf-oauth-v2-1-15}, 2~March~2026~\cite{oauth21}) consolidates the
+core authorization framework --- it makes PKCE mandatory, removes the implicit
+and resource-owner-password grants, and requires exact redirect-URI matching ---
+but it changes neither of the two ingredients this paper's gap depends on.
+\emph{First}, it does not incorporate or modify RFC~8693 token exchange or the
+\code{act} claim, so the requester/executor actor semantics are untouched.
+\emph{Second}, it retains bearer tokens as the default and makes
+sender-constraint only a \code{SHOULD}: ``Bearer Tokens \emph{may} be enhanced
+with proof-of-possession specifications such as DPoP\ldots and mTLS''
+(\S1.4.2, ``Bearer Tokens''), while authorization and resource servers
+``\emph{SHOULD} use mechanisms for sender-constraining access tokens''
+(\S1.4.3, ``Sender-Constrained Access Tokens''). The fix this paper measures
+(Baseline~5) is therefore, even under the OAuth~2.1 draft current in 2026,
+\emph{recommended rather than required} --- so the gap is live by default in a
+fully standards-conformant deployment. AEGIS-AT's authorization core is
+2.1-conformant, but the changes 2.1 makes are orthogonal to what we measure: the
+harness exercises token exchange and direct per-agent credentials, not the
+implicit, authorization-code/PKCE, or password flows 2.1 revised --- so 2.1 is
+context, not a load-bearing dependency, and is deliberately \emph{not} a separate
+baseline (it would score identically to B3). As an Internet-Draft, 2.1 is still
+evolving; should a future revision elevate sender-constraint to a \code{MUST},
+that --- and only that --- would materially change this framing.
+
+\subsection{Proposed bindings, not measured baselines}
+The multi-agent delegation space has produced numerous binding proposals:
+Agentic JWT (A-JWT)~\cite{agenticjwt} uses per-agent proof-of-possession keys
+to prevent in-process impersonation; HDP~\cite{hdp} constructs append-only
+provenance chains; AIP's Invocation-Bound Capability Tokens~\cite{aip} report a
+100\% rejection rate across 600 adversarial attempts; PAuth~\cite{pauth}
+challenges OAuth's operator-scoped authorization model; and
+SentinelAgent~\cite{sentinelagent} introduces intent-verified delegation chains
+for federal systems. Each proposes a mechanism and validates its own scheme.
+None measures the standardized stack --- RFC~8693 alone, RFC~8693 +
+tamper-evident logging, and RFC~8693 + DPoP sender-constraint --- under
+identical conditions with pre-registered predictions. AEGIS-AT~v2 fills this
+gap: it is the controlled measurement that exhibits the non-monotonic
+regression-then-recovery curve, isolating the load-bearing layer that closes
+the attribution gap.\footnote{AgentLeak~\cite{agentleak} demonstrates that
+reproducible multi-agent security benchmarks are a recognized methodological
+genre; its privacy-leakage focus is orthogonal to our attribution-integrity
+measurement.}
+
 % ===========================================================================
 \section{Process-Boundary Ground Truth}
 \label{sec:recorder}
@@ -766,6 +810,11 @@ IETF, September 2023. \url{https://www.rfc-editor.org/rfc/rfc9449}.
 Tokens}, RFC~8705, IETF, February 2020.
 \url{https://www.rfc-editor.org/rfc/rfc8705}.
 
+\bibitem{oauth21} D.~Hardt, A.~Parecki, and T.~Lodderstedt, \emph{The OAuth 2.1
+Authorization Framework}, Internet-Draft draft-ietf-oauth-v2-1-15, IETF,
+2~March 2026 (work in progress; expires 3~September 2026).
+\url{https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1}.
+
 \bibitem{rfc7800} M.~Jones, J.~Bradley, and H.~Tschofenig, \emph{Proof-of-Possession
 Key Semantics for JSON Web Tokens (JWTs)}, RFC~7800, IETF, April 2016.
 \url{https://www.rfc-editor.org/rfc/rfc7800}.
@@ -805,6 +854,22 @@ April 2026. \url{https://arxiv.org/abs/2604.02767}.
 
 \bibitem{agenticjwt} A.~Goswami, \emph{Agentic JWT: Secure Delegation for Agentic AI},
 arXiv:2509.13597, September 2025. \url{https://arxiv.org/abs/2509.13597}.
+
+\bibitem{aip} S.~Prakash, \emph{AIP: Agent Identity Protocol for Verifiable
+Delegation Across MCP and A2A}, arXiv:2603.24775, March 2026.
+\url{https://arxiv.org/abs/2603.24775}.
+
+\bibitem{hdp} A.~Dalugoda, \emph{HDP: A Lightweight Cryptographic Protocol for
+Human Delegation Provenance in Agentic AI Systems}, arXiv:2604.04522, April 2026.
+\url{https://arxiv.org/abs/2604.04522}.
+
+\bibitem{pauth} R.~K.~Sharma, L.~Jiang, Z.~Lin, and S.~Chen, \emph{PAuth:
+Precise Task-Scoped Authorization for Agents}, arXiv:2603.17170, March 2026.
+\url{https://arxiv.org/abs/2603.17170}.
+
+\bibitem{agentleak} F.~El~Yagoubi, G.~Badu-Marfo, and R.~Al~Mallah, \emph{AgentLeak:
+A Full-Stack Benchmark for Privacy Leakage in Multi-Agent LLM Systems},
+arXiv:2602.11510, February 2026. \url{https://arxiv.org/abs/2602.11510}.
 
 \end{thebibliography}
 
