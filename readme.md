@@ -1,5 +1,8 @@
 # AEGIS-AT — Attribution Integrity Benchmark
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20693303.svg)](https://doi.org/10.5281/zenodo.20693303)
+&nbsp;[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **Adding the industry-standard delegation mechanism to a correctly-functioning
 multi-agent AI system makes audit attribution *worse*, not better — and v2
 measures the standardized layer that puts it right.**

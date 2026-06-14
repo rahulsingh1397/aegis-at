@@ -18,6 +18,7 @@ abstract: >-
 license: Apache-2.0
 version: "v2.0.1"
 date-released: "2026-06-14"
+doi: "10.5281/zenodo.20693303"
 keywords:
   - multi-agent systems
   - AI agent security
