@@ -134,7 +134,7 @@ with the staged pre-registration (v3.0 scripted core → v3.1 LLM ladder).
 
 ## 2. Reuse map (INV-6 — config flags over one codebase, not a fork)
 
-**Settled approach (via `conftest.py`/`sys.path` adding both roots):** `aegis_at_v3` *imports*
+**Recommended approach (P1 decision):** `aegis_at_v3` *depends on / imports*
 `aegis_at_v2` for the B1–B5 path, so that path stays **byte-for-byte** v1/v2
 (strongest INV-6); v3 adds only the new layer. (Alternative — vendoring — is a
 weaker INV-6 story; flagged for the P1 decision.)
