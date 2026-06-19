@@ -184,6 +184,72 @@ An independent IETF draft defines a compatible architectural model for human-anc
 
 ---
 
+## v3 Sources (2026 completion-block landscape)
+
+> **Authoritative for v3:** the *Verified* entries below are pinned with verbatim
+> quotes in the **locked** `Documents/ThreatModel/ThreatModelv3/source-lock-v3.md`
+> (§A) — that file, not this list, is the citation of record for the v3
+> pre-registration. *Pending* entries are **not yet read at primary source**
+> (INV-8) and must not be cited as fact until verified (`source-lock-v3.md` §B).
+
+### v3-1. AIP — Agent Identity Protocol · **the v3 headline anchor**
+- **Status:** Verified (`source-lock-v3.md` §A1)
+- **Docs:** S. Prakash — IETF `draft-prakash-aip-00` (citation of record) · arXiv:2603.24775
+- **Core (verified):** completion block signed by the executing agent (§6.1);
+  **Level 1 "Self-Reported … Default for trusted environments"** (§6.2); claims the
+  artifact is "tamper-evident, non-repudiable" (§6.3); the §7.1 threat model does
+  **not** cover a dishonest authorized executor.
+- **Relevance:** the spec that makes self-attestation the default — v3's B8 and the
+  convergence thesis rest on it.
+
+### v3-2. PEDIGREE — Verifiable Delegation Identity for Agentic AI
+- **Status:** Verified (`source-lock-v3.md` §A2)
+- **Docs:** K. Rampalli — IETF `draft-rampalli-pedigree-00` (Apr 2026)
+- **Core (verified):** §8 completion blocks; `verification_status` MUST be one of
+  **four** tiers — `self_reported`, `tool_verified`, `peer_verified`,
+  `human_verified` (§8.2.3); **no default specified**, no adequacy guidance.
+- **Relevance:** the tier vocabulary; B9 instantiates its `tool_verified` tier.
+  (NOT the source for a "self-report default" — that is AIP.)
+
+### v3-3. HDP — Human Delegation Provenance
+- **Status:** Verified (`source-lock-v3.md` §A3)
+- **Docs:** A. Dalugoda — arXiv:2604.04522 · IETF `draft-helixar-hdp-agentic-delegation-00`
+- **Core (verified):** append-only chain of self-supplied action summaries;
+  **v0.1 signs every hop with the issuer's key, not the agent's** (§7.1 — a hop is
+  not even bound to the executor); §5.4 admits a genuine-but-misrepresenting hop is
+  "not detectable by the protocol alone."
+- **Relevance:** third convergence example; the issuer-signing detail makes the gap
+  *worse* than AIP's (analysis point for the P5 paper).
+
+### v3-4. MCP authorization spec · **the v3 transport boundary**
+- **Status:** Verified (`source-lock-v3.md` §A4)
+- **Docs:** modelcontextprotocol.io — Authorization, revision 2025-06-18
+- **Core (verified):** server **MUST NOT** pass the client's token through to
+  upstream; OAuth 2.1 bearer + RFC 8707 audience binding; **no** act claim /
+  delegation chain / attribution mechanism; authorization is **OPTIONAL**.
+- **Relevance:** grounds v3 in a shipped 2026 protocol; the token-passthrough rule is
+  why executor identity must ride in a completion record (B8/B9).
+
+### Standards (RFCs / drafts) used across v2–v3
+RFC 8693 (Token Exchange) · RFC 9449 (DPoP) · RFC 7800 (PoP key semantics) ·
+RFC 7638 (JWK Thumbprint) · RFC 8705 (mTLS / certificate-bound tokens — v3 B6) ·
+RFC 8707 (Resource Indicators) · OAuth 2.1 `draft-ietf-oauth-v2-1` (bearer default;
+sender-constraint only a SHOULD).
+
+### Pending source verification (do NOT cite as fact — `source-lock-v3.md` §B)
+- **Otsuka et al.** — arXiv:2604.23280 ("recursive delegation accountability" as a
+  structural gap). *Pending.*
+- **PAuth** — arXiv:2603.17170 (task-scoped authorization). *Pending.*
+- **A-JWT arXiv-ID reconciliation** — Ref 9 above lists arXiv:2509.13597; HDP cites
+  Goswami arXiv:2601.05293. Resolve which is canonical and add
+  `draft-goswami-agentic-jwt` (v3 B7). *Pending (P3).*
+- **OWASP Top 10 for Agentic Applications 2026** (ASI03 Identity & Privilege Abuse)
+  — raised in review; not yet read at source. *Pending.*
+- **AgentLeak** — arXiv:2602.11510 (multi-agent privacy benchmark; adjacent genre,
+  cited in the v2 paper). *Re-verify before v3 reuse.*
+
+---
+
 ## Addressing the Two Cautions
 
 ### Caution One: Verify References Before Adopting Framing

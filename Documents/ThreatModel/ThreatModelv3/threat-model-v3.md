@@ -1,9 +1,10 @@
 # Threat Model v3 — Attestation Source, the Colluding Executor, and a Capability Ladder (AEGIS-AT)
 
-> **Status: DRAFT — NOT YET LOCKED.** This file is the v3 pre-registration. It
-> becomes binding only when `threat-model-v3.sha256` is written and the CI test
-> `v3/tests/test_threat_model_v3_locked.py` is green. Per INV-7, it is locked
-> **before** any v3 measuring code is written. Once locked, a contradicting
+> **Status: PRE-REGISTERED AND LOCKED.** This file is hash-locked by
+> `threat-model-v3.sha256` and the CI test
+> `v3/tests/test_threat_model_v3_locked.py`; any edit fails the build. To amend,
+> add `threat-model-v3.1.md` with its own lock (§10) — never edit this file. Per
+> INV-7 it was locked **before** any v3 measuring code was written; a contradicting
 > measurement is a **finding**, never coded around.
 >
 > **Companion artifact:** every domain/spec claim is sourced to

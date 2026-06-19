@@ -1,7 +1,8 @@
 # AEGIS-AT v3 — Source Lock (primary-source receipts)
 
-**Status:** DRAFT — not yet SHA-256-locked. Pending author review before it is
-hashed alongside `threat-model-v3.md`.
+**Status:** PRE-REGISTERED AND LOCKED — hash-locked by `source-lock-v3.sha256`
+and the CI test `v3/tests/test_threat_model_v3_locked.py`; any edit fails the
+build. To amend, add `source-lock-v3.1.md` with its own lock — never edit this file.
 **Verification date:** 2026-06-15 (re-verify before any prediction is locked; IETF
 drafts churn and several expire late 2026).
 **Discipline:** This file exists because of INV-8 (verify every domain/spec claim

@@ -63,7 +63,13 @@ with the staged pre-registration (v3.0 scripted core → v3.1 LLM ladder).
       `attester_id`, `signature`); `threat-model-v3.md` §5.1.
 - [ ] `v3/scripts/check_v3.sh` (mirror `check_v2.sh`): INV greps (INV-2/INV-3),
       lint, format, lock test, core tests.
-- [ ] `v3/tests/conftest.py` (mirror v2 — path setup for `aegis_at_v3`).
+- [ ] `v3/tests/conftest.py` (mirror v2) — adds **both** `v3` and `v2` roots to
+      `sys.path` so `aegis_at_v3` can import `aegis_at_v2` (**settled: import v2,
+      do not vendor** — strongest INV-6; a root `pyproject.toml` is the cleaner
+      alternative if sibling-import proves fragile).
+- [ ] Minimal B1–B5 regression harness over the MCP-shaped boundary (just enough
+      wiring to run the inherited v1/v2 curve through the adapter) — gives the gate's
+      regression check a home in P1 (review: P1 gate vs. deliverables).
 - [ ] **Tracked follow-up (review #4):** update `CHECKLIST.md` to make the spec
       version-specific (v3 spec governs v3 modules).
 - **Gate:** `check_v3.sh` exits 0; transport adapter has a test proving a passed-through
@@ -128,7 +134,7 @@ with the staged pre-registration (v3.0 scripted core → v3.1 LLM ladder).
 
 ## 2. Reuse map (INV-6 — config flags over one codebase, not a fork)
 
-**Recommended approach (P1 decision):** `aegis_at_v3` *depends on / imports*
+**Settled approach (via `conftest.py`/`sys.path` adding both roots):** `aegis_at_v3` *imports*
 `aegis_at_v2` for the B1–B5 path, so that path stays **byte-for-byte** v1/v2
 (strongest INV-6); v3 adds only the new layer. (Alternative — vendoring — is a
 weaker INV-6 story; flagged for the P1 decision.)
