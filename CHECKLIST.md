@@ -5,12 +5,17 @@ It is deliberately short. If it grows past one screen, prune it — an
 unused checklist is worse than none.
 
 The mechanical checks (tool name, "innermost" near identity, lint, core
-tests) are handled by `./scripts/check.sh`. **Run that first.** This file
+tests) are handled by the **version gate for the module under review**:
+`./scripts/check.sh` (v1/root), `v2/scripts/check_v2.sh` (v2), or
+`v3/scripts/check_v3.sh` (v3). **Run the relevant gate first.** This file
 covers only what a script *cannot* judge: the invariants that require
 understanding *why* the code is shaped the way it is.
 
-Reference: `Documents/ThreatModel/threat-model.md` is the spec. Every
-invariant below traces to a section of it.
+Reference the threat model for the version you are touching:
+`Documents/ThreatModel/threat-model.md` (v1),
+`Documents/ThreatModel/ThreatModelv2/threat-model-v2.md` (v2), or
+`Documents/ThreatModel/ThreatModelv3/threat-model-v3.md` (v3). Every
+invariant below traces to a section of the relevant versioned spec.
 
 ---
 
@@ -27,9 +32,10 @@ commit message; skip the rest.
 ---
 
 ## Step 0 — Mechanical gate (every module)
-- [ ] `./scripts/check.sh` exits 0. If it failed: read the failure
-      verbatim, fix the cited file, re-run. Don't commit around a red
-      gate. (Rule 12.)
+- [ ] The relevant version gate exits 0 (`./scripts/check.sh`,
+      `v2/scripts/check_v2.sh`, or `v3/scripts/check_v3.sh`). If it failed:
+      read the failure verbatim, fix the cited file, re-run. Don't commit
+      around a red gate. (Rule 12.)
 
 ## Step 1 — Verify against the source (INV-8)
 - [ ] Any claim this module makes about what RFC 8693, a token, or a
