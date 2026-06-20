@@ -77,19 +77,55 @@ with the staged pre-registration (v3.0 scripted core → v3.1 LLM ladder).
   (regression gate, mirrors `threat-model-v2.md` §3.1).
 
 ### P2 — B8/B9 scripted core (Tier 1 — THE headline)
-- [ ] Adversary adapter: `script-honest`, `script-colluding` bodies in the
-      executor seat (`threat-model-v3.md` §3.2, §4.2a).
-- [ ] B8 (self-reported) and B9 (independently-verified) wired into the sweep;
-      scorer reads claimed actor from the completion (B8) vs. the verifier (B9).
-- [ ] **Load-bearing checkpoint first (INV-7, §7.5):** B8 honest = 1.0 and
-      B9 honest = 1.0 **before** introducing the colluder.
-- [ ] **Non-circularity test as a SEPARATE test (review #5, §8.4):** B9 must
-      FAIL (AIS < 1.0) if the verifier is disabled or the audit path falls back
-      to `asserted_executor`.
-- [ ] INV-4 test: recorder inputs exclude `act` / completion fields / any
-      agent-supplied identity, on every cell (§8.5).
-- [ ] Determinism: byte-identical records across runs (§8.6); figures from the
-      live harness.
+
+> **Design reviewed by 4 external agents (2026-06-20); all confirmed it — no
+> locked prediction challenged.** Deltas folded into the slices below. One dissent
+> (add `asserted_principal_chain`/`asserted_scope` to the §5.1 record) was
+> **rejected**: it edits the locked schema (§10) and widens the adversary past the
+> declared-scoped executor-attribution finding (§3.1, §9 L13). Its legitimate
+> concern — "is the opaque-credential isolation rigged?" — is answered by the
+> non-locked JWT sensitivity check (Slice E), not a schema change.
+
+**Design (settled).** Contain executes under a B2-shaped **opaque per-agent
+credential**, so ground truth carries `principal_chain = None` and `scope` is
+observed — the **only** field the attestation source can move is the executor
+(`claimed_actor`). This is a deliberate experimental control isolating the
+executor-attribution axis; a JWT variant (where chain/scope could also be
+misreported) is Slice E / future work. The completion is injected **parent-side**
+(scripted, deterministic — the v2 token-lift pattern, §4.2a) under a **fixed**
+Contain Ed25519 key (§8.6). `score_ais` is reused byte-for-byte; the audit builder
+mirrors the GT record shape exactly. **MCP: MIN** — P2 cells do **not** re-route
+through `MCPBoundary`; P1 already proved the transport transparent and
+executor-free (§6.2/§6.3). Separation of concerns is stated in the paper.
+
+**Slices** (each: code → `ImportantQuestions` note → tests → review → commit):
+- [ ] **A — honest checkpoint (HARD GATE, §7.5).** Honest seat only, **no colluder
+      code**. Audit builder mirrors GT exactly (`claimed_scope =
+      scope_for_command(command)`, `claimed_principal_chain = None`). Assert
+      **B8 honest = 1.0 AND B9 honest = 1.0** (T1+T2) before proceeding; if either
+      ≠ 1.0, halt and triage — the harness is wrong, not the finding.
+- [ ] **B — colluder + grid + determinism.** `script-colluding` body
+      (`asserted_executor=enrich`, `attester_id=contain`, valid sig under Contain's
+      own key). Assert B8 = 0.0 / B9 = 1.0; full grid == locked on T1+T2; scorer
+      defect is **actor `field_mismatch`** (not a missing record); B8 does **not**
+      cross-check `attester_id==asserted_executor`. Fixed key + fixed clock →
+      byte-identical `(audit, truth)` records across runs (§8.6). **action_id
+      binding**: completion bound to the executed action; wrong-`action_id` → fail
+      loud (negative test).
+- [ ] **C — non-circularity (SEPARATE file, review #5, §8.4).** **C1:** production
+      B9 with no verifier observation **raises** (fail loud — never silently
+      degrade to B8; Rule 12). **C2:** a test-only degraded resolver that falls back
+      to `asserted_executor`, run through the **full** colluding sweep → AIS < 1.0
+      with `mismatched_fields==["actor"]`, `claimed_actor==enrich`,
+      `true_actor==contain`, `denominator==1`. End-to-end, not a unit test.
+- [ ] **D — INV-4 (end-to-end, §8.5).** Under collusion: `true_actor==contain`; GT
+      records carry **none** of `{asserted_executor, attester_id,
+      attestation_source, signature}`; recorder input path unchanged;
+      `claimed_actor==enrich` only on the audit side.
+- [ ] **E — JWT sensitivity (NON-LOCKED).** Re-run B8/B9 colluding over a JWT base
+      credential; assert the actor finding survives (B8 → AIS < 1.0, B9 → 1.0); if
+      chain/scope also move, report separately so actor stays the load-bearing
+      field. Answers the "opaque-cred is rigged" objection with data.
 - **Gate:** measured Tier-1 grid == locked prediction exactly
       (`threat-model-v3.md` §7.1: B8 = 1.0/0.0, B9 = 1.0/1.0 on T1 and T2). A
       contradiction is a **finding** (INV-7), not coded around.

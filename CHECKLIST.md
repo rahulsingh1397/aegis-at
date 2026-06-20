@@ -69,12 +69,14 @@ it doesn't apply.*
 
 ## Step 3 — Correctness intent
 
-**INV-7 — Pre-registered predictions (§6, §8).**
+**INV-7 — Pre-registered predictions.**
 - [ ] If this module affects measured AIS, the result is compared against
-      the pre-registered prediction (B1≈0, B2≈1.0, B3≈0, B4≈0).
+      the pre-registered prediction for the version under review (v1 §6/§8:
+      B1≈0, B2≈1.0, B3≈0, B4≈0; v2: +B5=1.0; v3 §7.1: B8=1.0/0.0, B9=1.0/1.0).
 - [ ] A contradiction is **reported as a finding**, not coded around.
-- [ ] (Checkpoint) The no-attack flow yields correct attribution at
-      Baseline 2 **before** act claims are added.
+- [ ] (Checkpoint) The honest/no-attack flow yields correct attribution
+      **before** the adversarial step is added — v1/v2: Baseline 2 before act
+      claims; v3 §7.5: B8 & B9 honest = 1.0 before the colluder.
 
 ## Step 4 — General quality (CLAUDE.md rules, briefly)
 - [ ] Surgical: touched only what this change needs (Rule 3).
