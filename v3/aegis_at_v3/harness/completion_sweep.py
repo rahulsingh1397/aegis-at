@@ -30,9 +30,11 @@ the action_id binding guard. (Slice A: the honest checkpoint, §7.5.)
 
 from __future__ import annotations
 
+from aegis_at_v2.auth.tokens import mint_initial_token
 from aegis_at_v2.harness import agent_bodies, agent_proc
 from aegis_at_v2.harness.recorder import make_recorder
 from aegis_at_v2.harness.scorer import score_ais
+from aegis_at_v2.orchestrator.orchestrator import mint_delegated_token
 from aegis_at_v2.policy.scope_map import scope_for_command
 from aegis_at_v2.tools.siem_action import siem_action
 from aegis_at_v2.topologies import TOPOLOGY_NAMES
@@ -49,6 +51,7 @@ from aegis_at_v3.harness import adversary
 _COMMAND = "isolate_host"
 _TARGET = "host-42"
 _EXECUTOR = adversary.CONTAIN  # the true executor; the kernel binds it to the PID
+_ROOT = "human:analyst"  # the root principal (the JWT base credential's chain root)
 _FIXED_TS = 1_700_000_000.0
 # The id of the single scripted action a completion attests. The audit binds the
 # completion to THIS action (a completion for another action must not be paired in
@@ -113,11 +116,30 @@ def resolve_claimed_actor(
     )
 
 
-def _execute(now_fn) -> list:
-    """Run the canonical action as Contain under an opaque per-agent credential,
-    reusing the v2 kernel + recorder. Returns the ground-truth log; ground truth
-    is written from the OS PID registry (INV-4), never from the credential."""
-    cred = {"format": "apikey", "agent": _EXECUTOR, "scope": "siem:write"}
+def _base_credential(base_credential: str):
+    """The execution (access-control) credential Contain presents — the ONLY thing
+    Slice E varies. "apikey" is the opaque per-agent credential of the locked B8/B9
+    core (GT chain = None); "jwt" is a delegated token naming Contain (GT chain =
+    [contain, root]), used by the Slice E sensitivity check to show the actor
+    finding survives a chain-bearing credential. Either way the executor is Contain
+    and the action genuinely runs; the audit path is unchanged."""
+    if base_credential == "apikey":
+        return {"format": "apikey", "agent": _EXECUTOR, "scope": "siem:write"}
+    if base_credential == "jwt":
+        root = mint_initial_token(_ROOT, "siem:read siem:write")
+        return mint_delegated_token(
+            root, _EXECUTOR, "siem:write", audience="siem_action"
+        )
+    raise ValueError(
+        f"unknown base_credential {base_credential!r} (expected 'apikey'/'jwt')"
+    )
+
+
+def _execute(now_fn, base_credential: str) -> list:
+    """Run the canonical action as Contain, reusing the v2 kernel + recorder.
+    Returns the ground-truth log; ground truth is written from the OS PID registry
+    (INV-4), never from the credential — for either base credential."""
+    cred = _base_credential(base_credential)
     gt_log: list = []
     recorder = make_recorder(siem_action, gt_log)
 
@@ -131,19 +153,25 @@ def _execute(now_fn) -> list:
 
 
 def _build_audit_record(
-    claimed_actor: str, command: str, target: str, timestamp: float
+    claimed_actor: str,
+    command: str,
+    target: str,
+    timestamp: float,
+    principal_chain,
 ) -> dict:
     """Build the audit record scored against ground truth, mirroring the GT shape
     EXACTLY so the only field the attestation source can move is the actor:
       - claimed_scope: from the OBSERVED command (the verifier's own observation,
         not an agent-supplied field) — always matches true_scope.
-      - claimed_principal_chain: None — the opaque-credential audit carries no
-        delegation chain (matches the recorder's None for apikey credentials).
+      - claimed_principal_chain: mirrors the GT chain SHAPE for the resolved actor —
+        None under the opaque credential (the locked core), or [claimed_actor, root]
+        under the JWT base (Slice E), so honest cells match and a colluder's false
+        executor also implies a false chain.
     """
     return {
         "claimed_actor": claimed_actor,
         "claimed_scope": scope_for_command(command),
-        "claimed_principal_chain": None,
+        "claimed_principal_chain": principal_chain,
         "command": command,
         "target": target,
         "timestamp": timestamp,
@@ -159,6 +187,7 @@ def run_cell(
     verifier_enabled: bool = True,
     completion_action_id: str | None = None,
     audit_resolver=resolve_claimed_actor,
+    base_credential: str = "apikey",
 ) -> dict:
     """Run one B8/B9 cell for one adversary `seat`; return its AIS result + records.
 
@@ -172,6 +201,8 @@ def run_cell(
     `audit_resolver` is the non-circularity test seam (Slice C): production uses
     `resolve_claimed_actor`; the §8.4 control injects a degraded resolver that
     falls back to `asserted_executor` to prove B9's 1.0 is earned by the verifier.
+    `base_credential` selects Contain's execution credential — "apikey" (the locked
+    B8/B9 core, GT chain None) or "jwt" (Slice E sensitivity, GT chain-bearing).
     """
     if topology not in TOPOLOGY_NAMES:
         raise ValueError(
@@ -186,7 +217,7 @@ def run_cell(
             return _FIXED_TS
 
     # 1. EXECUTE (reuse v2; ground truth from the PID registry, INV-4).
-    gt_log = _execute(now_fn)
+    gt_log = _execute(now_fn, base_credential)
     gt = gt_log[0]
 
     # 2. ATTEST (Slice A: honest seat only).
@@ -215,9 +246,13 @@ def run_cell(
         source, completion.asserted_executor, verifier_observed_actor
     )
 
-    # 4. SCORE (reuse the v2 scorer byte-for-byte).
+    # 4. SCORE (reuse the v2 scorer byte-for-byte). The audit chain mirrors the GT
+    #    chain SHAPE for the resolved actor: None for the opaque credential, or
+    #    [claimed_actor, root] for the JWT base (Slice E) — so the only field the
+    #    attestation source moves under the opaque core is still the actor.
+    audit_chain = None if base_credential == "apikey" else [claimed_actor, _ROOT]
     audit = _build_audit_record(
-        claimed_actor, gt["command"], gt["target"], gt["timestamp"]
+        claimed_actor, gt["command"], gt["target"], gt["timestamp"], audit_chain
     )
     triple = (audit["command"], audit["target"], audit["timestamp"])
     result = score_ais([audit], gt_log, frozenset({triple}))

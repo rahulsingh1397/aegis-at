@@ -3,7 +3,7 @@
 - **Module:** `v3/aegis_at_v3/harness/completion_sweep.py`
 - **Spec:** `threat-model-v3.md` §5, §7.1 (LOCKED) · §5.3/§8.4 (non-circularity) · §7.5 (checkpoint)
 - **Tests:** `v3/tests/test_b8_b9_scripted.py` (Slice A) · `test_b9_non_circularity.py` (Slice C, pending)
-- **Status:** Slices A–D (honest checkpoint + colluder, locked grid, determinism, action binding, B9 non-circularity, INV-4 end-to-end). JWT sensitivity (E) pending.
+- **Status:** Slices A–E complete (honest checkpoint + colluder, locked grid, determinism, action binding, B9 non-circularity, INV-4 end-to-end, JWT sensitivity). P2 / v3.0 deterministic core done.
 
 ## What it is
 The headline measurement. EXTENDS the v2 sweep by **import** (INV-6): reuses v2's
@@ -32,7 +32,8 @@ move is the executor (`claimed_actor`)**. B8-colluding therefore fails *purely* 
 executor attribution — the sharpest possible isolation, and the most conservative
 claim (AIS = 0.0 even when one field can move). A reviewer's "you rigged it by
 suppressing chain/scope" is answered with **data**, not a schema change, by the
-non-locked **JWT sensitivity check (Slice E)**. The dissent to add
+non-locked **JWT sensitivity check (Slice E, now green: `tests/test_jwt_sensitivity.py`)**.
+The dissent to add
 `asserted_principal_chain`/`asserted_scope` to the §5.1 record was **rejected**:
 it edits the locked schema (§10) and widens the adversary past the
 declared-scoped executor-attribution finding (§3.1, §9 L13).
@@ -114,4 +115,5 @@ asserts identical results on T1 and T2 (§7.1) — a divergence would be a findi
 | `test_b9_fails_if_audit_falls_back_to_self_report` (C) | §8.4: fallback to self-report → 0.0 (B9's 1.0 is earned) |
 | `test_recorder_independent_of_completion` (D) | §8.5: every cell — GT is the recorder's schema, true executor observed |
 | `test_inv4_assertion_catches_a_leak` (D) | non-vacuity: the INV-4 check would catch a leaked completion field |
-| JWT sensitivity (E, non-locked) | the actor finding survives a JWT base credential |
+| `test_jwt_b8_colluding_finding_survives` (E) | non-locked: B8 finding survives a JWT base (actor mismatch; GT carries a real chain) |
+| `test_jwt_b9_colluding_recovers` (E) | non-locked: B9 recovers under a JWT base (verifier wins) |

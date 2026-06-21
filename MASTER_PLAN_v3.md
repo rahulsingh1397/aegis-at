@@ -122,7 +122,7 @@ executor-free (§6.2/§6.3). Separation of concerns is stated in the paper.
       records carry **none** of `{asserted_executor, attester_id,
       attestation_source, signature}`; recorder input path unchanged;
       `claimed_actor==enrich` only on the audit side.
-- [ ] **E — JWT sensitivity (NON-LOCKED).** Re-run B8/B9 colluding over a JWT base
+- [x] **E — JWT sensitivity (NON-LOCKED).** Re-run B8/B9 colluding over a JWT base
       credential; assert the actor finding survives (B8 → AIS < 1.0, B9 → 1.0); if
       chain/scope also move, report separately so actor stays the load-bearing
       field. Answers the "opaque-cred is rigged" objection with data.
