@@ -118,7 +118,7 @@ executor-free (§6.2/§6.3). Separation of concerns is stated in the paper.
       to `asserted_executor`, run through the **full** colluding sweep → AIS < 1.0
       with `mismatched_fields==["actor"]`, `claimed_actor==enrich`,
       `true_actor==contain`, `denominator==1`. End-to-end, not a unit test.
-- [ ] **D — INV-4 (end-to-end, §8.5).** Under collusion: `true_actor==contain`; GT
+- [x] **D — INV-4 (end-to-end, §8.5).** Under collusion: `true_actor==contain`; GT
       records carry **none** of `{asserted_executor, attester_id,
       attestation_source, signature}`; recorder input path unchanged;
       `claimed_actor==enrich` only on the audit side.

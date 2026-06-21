@@ -3,7 +3,7 @@
 - **Module:** `v3/aegis_at_v3/harness/completion_sweep.py`
 - **Spec:** `threat-model-v3.md` §5, §7.1 (LOCKED) · §5.3/§8.4 (non-circularity) · §7.5 (checkpoint)
 - **Tests:** `v3/tests/test_b8_b9_scripted.py` (Slice A) · `test_b9_non_circularity.py` (Slice C, pending)
-- **Status:** Slices A–C (honest checkpoint + colluder, locked grid, determinism, action binding, B9 non-circularity). INV-4 end-to-end (D), JWT sensitivity (E) pending.
+- **Status:** Slices A–D (honest checkpoint + colluder, locked grid, determinism, action binding, B9 non-circularity, INV-4 end-to-end). JWT sensitivity (E) pending.
 
 ## What it is
 The headline measurement. EXTENDS the v2 sweep by **import** (INV-6): reuses v2's
@@ -82,8 +82,10 @@ control shows that removing/bypassing the verifier breaks B9.
 Ground truth is written by the v2 recorder from the kernel PID registry. The
 completion record is built **parent-side, after execution**, and is **never**
 passed into the recorder's input path. The false `asserted_executor` cannot reach
-`true_actor`. Slice D asserts this end-to-end (GT carries none of
-`{asserted_executor, attester_id, attestation_source, signature}`).
+`true_actor`. Slice D (`tests/test_inv4_recorder_independence.py`) asserts this
+end-to-end on every cell: each GT record carries **exactly** the recorder's schema
+and the colluder's false value appears nowhere — with a non-vacuity guard proving
+the check would catch a leaked completion field.
 
 ## Topology
 `topology` is a **label only**: the opaque-cred audit path has no re-delegation
@@ -110,5 +112,6 @@ asserts identical results on T1 and T2 (§7.1) — a divergence would be a findi
 | `test_b9_earns_its_one_via_the_verifier` (C) | positive control: real verifier → 1.0 (claimed = true executor) |
 | `test_b9_fails_loud_when_verifier_disabled` (C) | §8.4: no verifier → raises (no silent degrade to B8) |
 | `test_b9_fails_if_audit_falls_back_to_self_report` (C) | §8.4: fallback to self-report → 0.0 (B9's 1.0 is earned) |
-| INV-4 end-to-end (D) | §8.5: no completion field reaches ground truth |
+| `test_recorder_independent_of_completion` (D) | §8.5: every cell — GT is the recorder's schema, true executor observed |
+| `test_inv4_assertion_catches_a_leak` (D) | non-vacuity: the INV-4 check would catch a leaked completion field |
 | JWT sensitivity (E, non-locked) | the actor finding survives a JWT base credential |
