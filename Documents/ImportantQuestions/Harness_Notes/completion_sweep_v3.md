@@ -3,7 +3,7 @@
 - **Module:** `v3/aegis_at_v3/harness/completion_sweep.py`
 - **Spec:** `threat-model-v3.md` §5, §7.1 (LOCKED) · §5.3/§8.4 (non-circularity) · §7.5 (checkpoint)
 - **Tests:** `v3/tests/test_b8_b9_scripted.py` (Slice A) · `test_b9_non_circularity.py` (Slice C, pending)
-- **Status:** Slice A (honest checkpoint). Colluder/grid/determinism (B), non-circularity (C), INV-4 (D), JWT sensitivity (E) pending.
+- **Status:** Slices A–C (honest checkpoint + colluder, locked grid, determinism, action binding, B9 non-circularity). INV-4 end-to-end (D), JWT sensitivity (E) pending.
 
 ## What it is
 The headline measurement. EXTENDS the v2 sweep by **import** (INV-6): reuses v2's
@@ -14,7 +14,8 @@ swappable adversary seat:
 ```
 EXECUTE  Contain runs the action (opaque per-agent cred) -> recorder writes GT
          from the OS PID registry (INV-4).
-ATTEST   adversary.py emits a signed completion (honest now; colluding in B).
+ATTEST   adversary.py emits a signed completion (honest, or colluding: a false
+         asserted_executor=Enrich within Contain's own key — valid sig, false claim).
 RESOLVE  audit claimed_actor by attestation source:
            B8 self_reported -> completion.asserted_executor
            B9 tool_verified -> the verifier's observation (the recorder)
@@ -52,14 +53,16 @@ chain or a different scope, **honest B8/B9 would fail for the wrong reason** and
 the §7.5 checkpoint would mis-fire. `test_audit_record_mirrors_ground_truth_shape`
 pins this.
 
-### 4. The non-circularity seam is built in from Slice A
-`verifier_enabled` exists now (default `True`) so Slice C can disable the verifier
-end-to-end through the **full sweep** (not a unit test of the `if`). B9's verifier
-observation and ground truth share the independent process-boundary observation
-point (§5.3) — legitimate, *because* the Slice C control shows removing the
-verifier breaks B9.
+### 4. The non-circularity seam (realized in Slice C)
+`run_cell` exposes two test seams — `verifier_enabled` (disable the verifier) and
+`audit_resolver` (inject a degraded resolver that falls back to
+`asserted_executor`). `tests/test_b9_non_circularity.py` drives both END-TO-END
+through the full sweep: real verifier → 1.0; verifier disabled → fails loud; audit
+falls back to the self-report → 0.0. B9's verifier observation and ground truth
+share the process-boundary observation point (§5.3) — legitimate *because* this
+control shows that removing/bypassing the verifier breaks B9.
 
-## Fail-loud guards (Agent-review: action binding)
+## Fail-loud guards (no silent defaults — Rule 12)
 - **`action_id` binding** (`CompletionBindingError`): the completion must attest
   THE executed action; a completion for another action must never be paired in by
   timestamp. Slice B adds the wrong-`action_id` negative test.
@@ -67,6 +70,13 @@ verifier breaks B9.
   completion under Contain's own key. Every scripted seat signs validly (§4.2
   forbids cross-key forgery), so a failure here is a *harness bug*. This makes
   INV-5 concrete: the crypto check **passes**, yet B8 still records the wrong actor.
+- **unknown `attestation_source`** (`ValueError`, B+C review): `resolve_claimed_actor`
+  raises on any source that isn't `self_reported`/`tool_verified` — never silently
+  defaults to the self-report.
+- **unknown `topology`** (`ValueError`, B+C review): `run_cell` rejects an
+  unregistered topology, so the inert label still names a real T1/T2 (§7.1).
+- The test seams (`completion_action_id`, `audit_resolver`, `verifier_enabled`) are
+  **keyword-only**, so a degraded path can't be reached by a positional argument.
 
 ## INV-4 (the instrument's credibility)
 Ground truth is written by the v2 recorder from the kernel PID registry. The
@@ -92,7 +102,13 @@ asserts identical results on T1 and T2 (§7.1) — a divergence would be a findi
 | `test_honest_checkpoint_is_one` (A) | §7.5/§8.1: honest B8 **and** B9 = 1.0 on T1+T2 |
 | `test_audit_record_mirrors_ground_truth_shape` (A) | actor is the only movable field (#3) |
 | `test_honest_completion_signature_is_valid` (A) | crypto path sound before the colluder |
-| colluder grid / determinism / action_id (B) | B8=0.0/B9=1.0; byte-identical; binding fail-loud |
-| B9 non-circularity (C) | §8.4: B9 fails loud (C1) + earns its 1.0 (C2) |
+| `test_grid_matches_locked_prediction` (B) | §7.1: grid == locked (B8=1.0/0.0, B9=1.0/1.0) on T1+T2 |
+| `test_b8_colluding_defect_is_actor_only` (B) | B8=0.0 is one actor field_mismatch, not a missing record |
+| `test_b9_recovers_under_collusion` (B) | §8.4: B9 reads the verifier → 1.0 under the same lie |
+| `test_scripted_cell_is_byte_identical_across_runs` (B) | §8.6: determinism (fixed key + clock) |
+| `test_wrong_action_id_fails_loud` (B) | action binding: an unbound completion fails loud |
+| `test_b9_earns_its_one_via_the_verifier` (C) | positive control: real verifier → 1.0 (claimed = true executor) |
+| `test_b9_fails_loud_when_verifier_disabled` (C) | §8.4: no verifier → raises (no silent degrade to B8) |
+| `test_b9_fails_if_audit_falls_back_to_self_report` (C) | §8.4: fallback to self-report → 0.0 (B9's 1.0 is earned) |
 | INV-4 end-to-end (D) | §8.5: no completion field reaches ground truth |
 | JWT sensitivity (E, non-locked) | the actor finding survives a JWT base credential |

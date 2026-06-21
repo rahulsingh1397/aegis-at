@@ -10,9 +10,9 @@ construction as v2's token-lift/replay stimuli (threat-model-v2.md §2) — so t
 attacker is deterministic and INV-5 holds: the colluding executor is the
 adversary's locus, not a miscoded component.
 
-Slice A (this commit) ships the HONEST seat ONLY. The load-bearing checkpoint
-(§7.5) must be green before any colluder code exists; the `colluding` seat lands
-in Slice B.
+Slice B adds the `colluding` seat — a false self-report within Contain's OWN key
+(§4.2a). The honest seat and the load-bearing §7.5 checkpoint shipped in Slice A
+(green before any colluder code existed).
 
 Determinism (§8.6): Contain signs under a FIXED Ed25519 key (constant seed), and
 Ed25519 is deterministic (RFC 8032), so a completion record is byte-identical
@@ -29,10 +29,14 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from aegis_at_v3.completion.completion_record import CompletionRecord, sign_completion
 
 # The true executor and the attester. Contain runs the action and signs the
-# completion with its OWN key. (The colluder in Slice B keeps attester_id ==
-# Contain while naming a DIFFERENT asserted_executor — a valid signature, a
-# false claim; that is the whole capability, §4.2.)
+# completion with its OWN key.
 CONTAIN = "agent:contain"
+
+# The agent a colluder falsely names as the executor. Contain (the real executor)
+# signs a completion asserting ENRICH ran — a valid signature under Contain's OWN
+# key, a false claim. The colluder CANNOT sign under Enrich's key (cross-key
+# forgery is out of scope, §4.2).
+ENRICH = "agent:enrich"
 
 # Fixed seed -> fixed Contain signing key (§8.6 determinism). The value is
 # arbitrary but CONSTANT so signatures reproduce byte-for-byte across runs.
@@ -64,17 +68,36 @@ def honest_completion(attestation_source: str, action_id: str) -> CompletionReco
     )
 
 
+def colluding_completion(attestation_source: str, action_id: str) -> CompletionRecord:
+    """script-colluding (§4.2a): a FALSE completion within Contain's OWN key.
+
+    asserted_executor = Enrich (a DIFFERENT agent) while attester_id = Contain and
+    the signature is under Contain's key: a VALID signature, a FALSE claim. No
+    cryptographic check fails (verify_signature returns True). Only B9's
+    independent verifier catches it; a self_reported audit (B8) records the false
+    executor (AIS = 0.0, §8.2). The colluder cannot sign under Enrich's key —
+    cross-key forgery / principal laundering is out of scope (§4.2, §9 L13).
+    """
+    return sign_completion(
+        action_id=action_id,
+        asserted_executor=ENRICH,
+        attestation_source=attestation_source,
+        attester_id=CONTAIN,
+        private_key=contain_private_key(),
+    )
+
+
 def make_completion(
     seat: str, attestation_source: str, action_id: str
 ) -> CompletionRecord:
     """Produce the completion for one adversary `seat`.
 
-    Slice A implements `honest` only; `colluding` lands in Slice B. An unknown
-    seat fails loud (project convention: no silent default).
+    An unknown seat fails loud (project convention: no silent default).
     """
     if seat == "honest":
         return honest_completion(attestation_source, action_id)
+    if seat == "colluding":
+        return colluding_completion(attestation_source, action_id)
     raise ValueError(
-        f"unknown adversary seat {seat!r}; Slice A ships 'honest' only "
-        "(colluding lands in Slice B)"
+        f"unknown adversary seat {seat!r} (expected 'honest' or 'colluding')"
     )

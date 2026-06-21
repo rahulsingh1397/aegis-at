@@ -3,7 +3,7 @@
 - **Module:** `v3/aegis_at_v3/harness/adversary.py`
 - **Spec:** `threat-model-v3.md` §3.2 (adversary realization) · §4.2a (scripted colluder) · §8.6 (determinism)
 - **Tests:** `v3/tests/test_b8_b9_scripted.py`
-- **Status:** Slice A ships the **honest** seat only. `colluding` lands in Slice B; the LLM seat is P4.
+- **Status:** Slices A–B ship the **honest** and **colluding** seats. The LLM seat is P4.
 
 ## What it is
 The agent in the "liar seat" — a swappable plug that produces the **signed
@@ -57,4 +57,5 @@ load-bearing checkpoint (§7.5) provably colluder-free.
 |---|---|
 | `test_honest_completion_signature_is_valid` (A) | honest seat: valid sig, `asserted==attester==Contain` |
 | `test_honest_checkpoint_is_one` (A) | honest completion → B8/B9 = 1.0 (§7.5) |
-| colluding seat (B) | valid sig under Contain's key, false `asserted_executor=Enrich` |
+| `test_colluding_completion_valid_under_own_key_false_claim` (B) | valid sig under Contain's key, false `asserted_executor=Enrich` |
+| `test_b8_trusts_self_report_without_cross_checking_signer` (B) | B8 trusts the self-report; no `attester==asserted` cross-check |

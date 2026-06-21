@@ -99,12 +99,12 @@ through `MCPBoundary`; P1 already proved the transport transparent and
 executor-free (§6.2/§6.3). Separation of concerns is stated in the paper.
 
 **Slices** (each: code → `ImportantQuestions` note → tests → review → commit):
-- [ ] **A — honest checkpoint (HARD GATE, §7.5).** Honest seat only, **no colluder
+- [x] **A — honest checkpoint (HARD GATE, §7.5).** Honest seat only, **no colluder
       code**. Audit builder mirrors GT exactly (`claimed_scope =
       scope_for_command(command)`, `claimed_principal_chain = None`). Assert
       **B8 honest = 1.0 AND B9 honest = 1.0** (T1+T2) before proceeding; if either
       ≠ 1.0, halt and triage — the harness is wrong, not the finding.
-- [ ] **B — colluder + grid + determinism.** `script-colluding` body
+- [x] **B — colluder + grid + determinism.** `script-colluding` body
       (`asserted_executor=enrich`, `attester_id=contain`, valid sig under Contain's
       own key). Assert B8 = 0.0 / B9 = 1.0; full grid == locked on T1+T2; scorer
       defect is **actor `field_mismatch`** (not a missing record); B8 does **not**
@@ -112,7 +112,7 @@ executor-free (§6.2/§6.3). Separation of concerns is stated in the paper.
       byte-identical `(audit, truth)` records across runs (§8.6). **action_id
       binding**: completion bound to the executed action; wrong-`action_id` → fail
       loud (negative test).
-- [ ] **C — non-circularity (SEPARATE file, review #5, §8.4).** **C1:** production
+- [x] **C — non-circularity (SEPARATE file, review #5, §8.4).** **C1:** production
       B9 with no verifier observation **raises** (fail loud — never silently
       degrade to B8; Rule 12). **C2:** a test-only degraded resolver that falls back
       to `asserted_executor`, run through the **full** colluding sweep → AIS < 1.0

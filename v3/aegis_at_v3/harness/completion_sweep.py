@@ -24,7 +24,8 @@ agent-supplied field. B9's 1.0 is shown to be EARNED (not vacuous) by the
 Slice C control. Production B9 FAILS LOUD if the verifier observation is absent —
 it never silently degrades into B8 (Rule 12).
 
-Slice A (this commit): the HONEST seat + the load-bearing checkpoint (§7.5).
+Slice B adds the colluding seat, the locked grid (§7.1), determinism (§8.6), and
+the action_id binding guard. (Slice A: the honest checkpoint, §7.5.)
 """
 
 from __future__ import annotations
@@ -34,10 +35,12 @@ from aegis_at_v2.harness.recorder import make_recorder
 from aegis_at_v2.harness.scorer import score_ais
 from aegis_at_v2.policy.scope_map import scope_for_command
 from aegis_at_v2.tools.siem_action import siem_action
+from aegis_at_v2.topologies import TOPOLOGY_NAMES
 
 from aegis_at_v3.completion.completion_record import (
     SELF_REPORTED,
     TOOL_VERIFIED,
+    VALID_SOURCES,
     verify_signature,
 )
 from aegis_at_v3.harness import adversary
@@ -102,7 +105,12 @@ def resolve_claimed_actor(
                 "none was supplied (threat-model-v3.md §5.3/§8.4)"
             )
         return verifier_observed_actor
-    return asserted_executor  # SELF_REPORTED (B8)
+    if attestation_source == SELF_REPORTED:
+        return asserted_executor  # B8: trust the self-report
+    raise ValueError(
+        f"unknown attestation_source {attestation_source!r}; "
+        f"must be one of {sorted(VALID_SOURCES)} (no silent default)"
+    )
 
 
 def _execute(now_fn) -> list:
@@ -144,19 +152,34 @@ def _build_audit_record(
 
 def run_cell(
     baseline: str,
+    *,
     seat: str = "honest",
     topology: str = "T1",
     now_fn=None,
     verifier_enabled: bool = True,
+    completion_action_id: str | None = None,
+    audit_resolver=resolve_claimed_actor,
 ) -> dict:
     """Run one B8/B9 cell for one adversary `seat`; return its AIS result + records.
 
-    baseline in {"B8", "B9"}; seat in {"honest"} (Slice A; "colluding" in Slice B).
+    baseline in {"B8", "B9"}; seat in {"honest", "colluding"}.
     `topology` is threaded as a LABEL only: the opaque-credential audit path is
     topology-independent by construction (no re-delegation chain), so B8/B9 are
     identical on T1 and T2 (§7.1) — the grid test asserts this. `verifier_enabled`
     and the fixed clock support the Slice C control and §8.6 determinism.
+    `completion_action_id` is a test hook for the wrong-action_id negative test;
+    production callers leave it None so the completion binds to the executed action.
+    `audit_resolver` is the non-circularity test seam (Slice C): production uses
+    `resolve_claimed_actor`; the §8.4 control injects a degraded resolver that
+    falls back to `asserted_executor` to prove B9's 1.0 is earned by the verifier.
     """
+    if topology not in TOPOLOGY_NAMES:
+        raise ValueError(
+            f"unknown topology {topology!r}; must be one of "
+            f"{sorted(TOPOLOGY_NAMES)} — the opaque-credential path is "
+            "topology-inert, but the label must name a real registered topology "
+            "(§7.1 'identical on T1 and T2')"
+        )
     if now_fn is None:
 
         def now_fn():
@@ -168,7 +191,9 @@ def run_cell(
 
     # 2. ATTEST (Slice A: honest seat only).
     source = attestation_source_for(baseline)
-    completion = adversary.make_completion(seat, source, _ACTION_ID)
+    completion = adversary.make_completion(
+        seat, source, completion_action_id or _ACTION_ID
+    )
 
     # The completion must attest THE executed action, and its signature must
     # verify under the attester's own key — both fail loud otherwise.
@@ -186,7 +211,7 @@ def run_cell(
     #    is the recorder's independent process-boundary observation (INV-4-clean);
     #    verifier_enabled=False models a disabled verifier (the Slice C control).
     verifier_observed_actor = gt["true_actor"] if verifier_enabled else None
-    claimed_actor = resolve_claimed_actor(
+    claimed_actor = audit_resolver(
         source, completion.asserted_executor, verifier_observed_actor
     )
 
@@ -206,3 +231,25 @@ def run_cell(
         "truth": gt_log,
         "completion": completion,
     }
+
+
+def emit_b8_b9_grid(topology: str = "T1", now_fn=None) -> dict:
+    """The B8/B9 AIS grid for one topology (threat-model-v3.md §7.1).
+
+    Returns {"topology": t,
+             "B8": {"honest": ais, "colluding": ais},
+             "B9": {"honest": ais, "colluding": ais}}.
+
+    Composes run_cell over the 2x2 (baseline x seat) grid. The gate asserts this
+    equals the LOCKED prediction (B8 = 1.0/0.0, B9 = 1.0/1.0) on T1 and T2; a
+    contradiction is a FINDING (INV-7), never coded around.
+    """
+    grid: dict = {"topology": topology}
+    for baseline in ("B8", "B9"):
+        grid[baseline] = {
+            seat: run_cell(baseline, seat=seat, topology=topology, now_fn=now_fn)[
+                "result"
+            ]["ais"]
+            for seat in ("honest", "colluding")
+        }
+    return grid
