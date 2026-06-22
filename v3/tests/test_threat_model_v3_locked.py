@@ -34,6 +34,10 @@ TM_DIR = REPO_ROOT / "Documents" / "ThreatModel" / "ThreatModelv3"
 LOCKED = [
     ("threat-model-v3.md", "threat-model-v3.sha256"),
     ("source-lock-v3.md", "source-lock-v3.sha256"),
+    # v3.0.1 amendment: B6 (mTLS, RFC 8705) / B7 (A-JWT) predictions, both
+    # 1.0/1.0, additive over v3.0 (resolves §9 L11). Companion receipts locked too.
+    ("threat-model-v3.0.1.md", "threat-model-v3.0.1.sha256"),
+    ("source-lock-v3.0.1.md", "source-lock-v3.0.1.sha256"),
 ]
 
 

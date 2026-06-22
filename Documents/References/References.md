@@ -240,9 +240,12 @@ sender-constraint only a SHOULD).
 - **Otsuka et al.** — arXiv:2604.23280 ("recursive delegation accountability" as a
   structural gap). *Pending.*
 - **PAuth** — arXiv:2603.17170 (task-scoped authorization). *Pending.*
-- **A-JWT arXiv-ID reconciliation** — Ref 9 above lists arXiv:2509.13597; HDP cites
-  Goswami arXiv:2601.05293. Resolve which is canonical and add
-  `draft-goswami-agentic-jwt` (v3 B7). *Pending (P3).*
+- **A-JWT arXiv-ID reconciliation — RESOLVED (P3, 2026-06-21).** Canonical A-JWT =
+  IETF `draft-goswami-agentic-jwt-00` ("Secure Intent Protocol", A. Goswami,
+  2025-12-31) + companion arXiv:2509.13597 (Ref 9); read at source and locked for
+  baseline B7 in `source-lock-v3.0.1.md` §A6/§C. The HDP-cited `arXiv:2601.05293`
+  is an **unrelated** paper — "A Survey of Agentic AI and Cybersecurity" (Lazer,
+  Aryal, Gupta, Bertino) — and is **dropped as an A-JWT reference**.
 - **OWASP Top 10 for Agentic Applications 2026** (ASI03 Identity & Privilege Abuse)
   — raised in review; not yet read at source. *Pending.*
 - **AgentLeak** — arXiv:2602.11510 (multi-agent privacy benchmark; adjacent genre,
