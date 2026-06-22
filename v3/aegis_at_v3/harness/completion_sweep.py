@@ -46,6 +46,7 @@ from aegis_at_v3.completion.completion_record import (
     VALID_SOURCES,
     verify_signature,
 )
+from aegis_at_v3.completion import execution_assertion
 from aegis_at_v3.harness import adversary
 
 # Canonical action (matches the v2 sweep; only the audit path is new).
@@ -59,9 +60,9 @@ _FIXED_TS = 1_700_000_000.0
 # by timestamp); a mismatch fails loud (Slice B adds the negative test).
 _ACTION_ID = "act-isolate-host-42"
 # Baselines run_cell knows (fail loud on any other — Rule 12). B8/B9 are the locked
-# completion-attestation core; B6 (mTLS, §A1) is the P3 comparative-breadth
-# addition. (B7 / A-JWT lands in the next P3 slice.)
-_KNOWN_BASELINES = ("B6", "B8", "B9")
+# completion-attestation core; B6 (mTLS, §A1) and B7 (A-JWT execution assertion,
+# §A2) are the P3 comparative-breadth additions.
+_KNOWN_BASELINES = ("B6", "B7", "B8", "B9")
 
 
 class VerifierUnavailableError(Exception):
@@ -220,9 +221,9 @@ def run_cell(
     evidence_resolver=resolve_via_verified_evidence,
     base_credential: str = "apikey",
 ) -> dict:
-    """Run one B8/B9 cell for one adversary `seat`; return its AIS result + records.
+    """Run one baseline cell for one adversary `seat`; return its AIS result + records.
 
-    baseline in {"B6", "B8", "B9"}; seat in {"honest", "colluding"}.
+    baseline in {"B6", "B7", "B8", "B9"}; seat in {"honest", "colluding"}.
     `topology` is threaded as a LABEL only: the opaque-credential audit path is
     topology-independent by construction (no re-delegation chain), so B8/B9 are
     identical on T1 and T2 (§7.1) — the grid test asserts this. `verifier_enabled`
@@ -248,7 +249,8 @@ def run_cell(
     if baseline not in _KNOWN_BASELINES:
         raise ValueError(
             f"unknown baseline {baseline!r}; expected one of {_KNOWN_BASELINES} "
-            "(B8/B9 = completion attestation source; B6 = mTLS cert-bound, §A1)"
+            "(B8/B9 = completion attestation source; B6 = mTLS cert-bound, §A1; "
+            "B7 = A-JWT execution assertion, §A2)"
         )
     if now_fn is None:
 
@@ -291,10 +293,10 @@ def run_cell(
         claimed_actor = audit_resolver(
             source, completion.asserted_executor, verifier_observed_actor
         )
-    else:  # B6 (mTLS, RFC 8705): the executor presents its OWN cert; the token is
-        # bound to that cert's x5t#S256. verify_cert_binding does the §3 match AND
-        # returns the verified subject. The colluder cannot present another agent's
-        # cert (§4.2), so the verified identity is the true executor.
+    elif baseline == "B6":  # mTLS, RFC 8705: the executor presents its OWN cert;
+        # the token is bound to that cert's x5t#S256. verify_cert_binding does the
+        # §3 match AND returns the verified subject. The colluder cannot present
+        # another agent's cert (§4.2), so the verified identity is the true executor.
         cert_observed_actor = (
             mtls.verify_cert_binding(
                 mtls.agent_certificate_der(_EXECUTOR),
@@ -305,6 +307,22 @@ def run_cell(
         )
         claimed_actor = evidence_resolver(
             cert_observed_actor, completion.asserted_executor
+        )
+    else:  # B7 (A-JWT): the executor emits an execution assertion signed by its OWN
+        # PoP key; verify_execution_assertion checks the signature against the key
+        # REGISTERED for executed_by and returns it (A6). The colluder cannot sign as
+        # another agent (§4.2), so the verified executed_by is the true executor.
+        assertion_observed_actor = (
+            execution_assertion.verify_execution_assertion(
+                execution_assertion.sign_execution_assertion(
+                    _ACTION_ID, _EXECUTOR, _EXECUTOR
+                )
+            )
+            if verifier_enabled
+            else None
+        )
+        claimed_actor = evidence_resolver(
+            assertion_observed_actor, completion.asserted_executor
         )
 
     # 4. SCORE (reuse the v2 scorer byte-for-byte). The audit chain mirrors the GT
@@ -365,6 +383,27 @@ def emit_b6_grid(topology: str = "T1", now_fn=None) -> dict:
         "topology": topology,
         "B6": {
             seat: run_cell("B6", seat=seat, topology=topology, now_fn=now_fn)["result"][
+                "ais"
+            ]
+            for seat in ("honest", "colluding")
+        },
+    }
+
+
+def emit_b7_grid(topology: str = "T1", now_fn=None) -> dict:
+    """The B7 (A-JWT execution assertion) AIS grid for one topology.
+
+    Returns {"topology": t, "B7": {"honest": ais, "colluding": ais}}.
+
+    The gate asserts this == the LOCKED prediction (B7 = 1.0 / 1.0,
+    threat-model-v3.0.1.md §A2/§A5) on T1 and T2; a contradiction is a FINDING
+    (INV-7), never coded around. B7 is inert under the colluder: the verified
+    execution assertion (PoP-bound executed_by) overrides the self-reported lie.
+    """
+    return {
+        "topology": topology,
+        "B7": {
+            seat: run_cell("B7", seat=seat, topology=topology, now_fn=now_fn)["result"][
                 "ais"
             ]
             for seat in ("honest", "colluding")
