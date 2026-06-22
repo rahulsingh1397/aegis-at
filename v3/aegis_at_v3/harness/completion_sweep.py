@@ -39,6 +39,7 @@ from aegis_at_v2.policy.scope_map import scope_for_command
 from aegis_at_v2.tools.siem_action import siem_action
 from aegis_at_v2.topologies import TOPOLOGY_NAMES
 
+from aegis_at_v3.auth import mtls
 from aegis_at_v3.completion.completion_record import (
     SELF_REPORTED,
     TOOL_VERIFIED,
@@ -57,6 +58,10 @@ _FIXED_TS = 1_700_000_000.0
 # completion to THIS action (a completion for another action must not be paired in
 # by timestamp); a mismatch fails loud (Slice B adds the negative test).
 _ACTION_ID = "act-isolate-host-42"
+# Baselines run_cell knows (fail loud on any other — Rule 12). B8/B9 are the locked
+# completion-attestation core; B6 (mTLS, §A1) is the P3 comparative-breadth
+# addition. (B7 / A-JWT lands in the next P3 slice.)
+_KNOWN_BASELINES = ("B6", "B8", "B9")
 
 
 class VerifierUnavailableError(Exception):
@@ -76,6 +81,13 @@ class InvalidCompletionSignatureError(Exception):
     """A completion's signature does not verify under the attester's key. In the
     scripted core every seat signs with Contain's own valid key, so this is a
     harness bug, not an adversary capability (§4.2 forbids cross-key forgery)."""
+
+
+class VerifiedEvidenceUnavailableError(Exception):
+    """B6/B7 (verified-evidence baselines) were asked to resolve an executor with
+    no cert/assertion observation. Fail loud (Rule 12): silently falling back to
+    the self-report would make their 1.0 vacuous — the same non-circularity guard
+    as B9 (threat-model-v3.0.1.md §A1/§A2 caveats; §8.4)."""
 
 
 def attestation_source_for(baseline: str) -> str:
@@ -114,6 +126,24 @@ def resolve_claimed_actor(
         f"unknown attestation_source {attestation_source!r}; "
         f"must be one of {sorted(VALID_SOURCES)} (no silent default)"
     )
+
+
+def resolve_via_verified_evidence(
+    verified_observed_actor: str | None,
+    asserted_executor: str,
+) -> str:
+    """B6/B7: resolve the audit's claimed executor from INDEPENDENTLY VERIFIED
+    evidence — the cert subject (B6) or the verified execution assertion (B7) — NOT
+    from the recorder (that is B9) and NOT from the self-report (that is B8). FAIL
+    LOUD if the verification is absent. The non-circularity control injects a
+    degraded resolver that falls back to ``asserted_executor``, proving the 1.0 is
+    EARNED by the verification (mirrors B9's Slice-C control)."""
+    if verified_observed_actor is None:
+        raise VerifiedEvidenceUnavailableError(
+            "B6/B7 require an independent verified-evidence observation "
+            "(cert/assertion); none was supplied (threat-model-v3.0.1.md §A1/§A2)"
+        )
+    return verified_observed_actor
 
 
 def _base_credential(base_credential: str):
@@ -187,20 +217,24 @@ def run_cell(
     verifier_enabled: bool = True,
     completion_action_id: str | None = None,
     audit_resolver=resolve_claimed_actor,
+    evidence_resolver=resolve_via_verified_evidence,
     base_credential: str = "apikey",
 ) -> dict:
     """Run one B8/B9 cell for one adversary `seat`; return its AIS result + records.
 
-    baseline in {"B8", "B9"}; seat in {"honest", "colluding"}.
+    baseline in {"B6", "B8", "B9"}; seat in {"honest", "colluding"}.
     `topology` is threaded as a LABEL only: the opaque-credential audit path is
     topology-independent by construction (no re-delegation chain), so B8/B9 are
     identical on T1 and T2 (§7.1) — the grid test asserts this. `verifier_enabled`
     and the fixed clock support the Slice C control and §8.6 determinism.
     `completion_action_id` is a test hook for the wrong-action_id negative test;
     production callers leave it None so the completion binds to the executed action.
-    `audit_resolver` is the non-circularity test seam (Slice C): production uses
-    `resolve_claimed_actor`; the §8.4 control injects a degraded resolver that
+    `audit_resolver` is the B8/B9 non-circularity test seam (Slice C): production
+    uses `resolve_claimed_actor`; the §8.4 control injects a degraded resolver that
     falls back to `asserted_executor` to prove B9's 1.0 is earned by the verifier.
+    `evidence_resolver` is the analogous seam for B6 (and B7): production uses
+    `resolve_via_verified_evidence`; the degraded control falls back to the
+    self-report to prove B6's 1.0 is earned by the cert verification.
     `base_credential` selects Contain's execution credential — "apikey" (the locked
     B8/B9 core, GT chain None) or "jwt" (Slice E sensitivity, GT chain-bearing).
     """
@@ -211,6 +245,11 @@ def run_cell(
             "topology-inert, but the label must name a real registered topology "
             "(§7.1 'identical on T1 and T2')"
         )
+    if baseline not in _KNOWN_BASELINES:
+        raise ValueError(
+            f"unknown baseline {baseline!r}; expected one of {_KNOWN_BASELINES} "
+            "(B8/B9 = completion attestation source; B6 = mTLS cert-bound, §A1)"
+        )
     if now_fn is None:
 
         def now_fn():
@@ -220,8 +259,12 @@ def run_cell(
     gt_log = _execute(now_fn, base_credential)
     gt = gt_log[0]
 
-    # 2. ATTEST (Slice A: honest seat only).
-    source = attestation_source_for(baseline)
+    # 2. ATTEST. B8/B9 carry the baseline's own attestation source; B6/B7 face the
+    #    SAME self-reported lie B8 does (the colluder self-reports Enrich) but read
+    #    identity from independently VERIFIED evidence, so the lie is inert (§A1/§A4).
+    source = (
+        attestation_source_for(baseline) if baseline in ("B8", "B9") else SELF_REPORTED
+    )
     completion = adversary.make_completion(
         seat, source, completion_action_id or _ACTION_ID
     )
@@ -238,13 +281,31 @@ def run_cell(
             "completion signature does not verify under Contain's key"
         )
 
-    # 3. RESOLVE the audit actor by attestation source. The verifier observation
-    #    is the recorder's independent process-boundary observation (INV-4-clean);
-    #    verifier_enabled=False models a disabled verifier (the Slice C control).
-    verifier_observed_actor = gt["true_actor"] if verifier_enabled else None
-    claimed_actor = audit_resolver(
-        source, completion.asserted_executor, verifier_observed_actor
-    )
+    # 3. RESOLVE the audit actor by baseline. B8 reads the self-report; B9 reads the
+    #    recorder's process-boundary observation; B6 reads the INDEPENDENTLY VERIFIED
+    #    cert subject — never the recorder (that is B9) and never the self-report
+    #    (that is B8) — so the colluder's lie is inert (§A1/§A4). verifier_enabled=
+    #    False models disabled verification (the non-circularity control).
+    if baseline in ("B8", "B9"):
+        verifier_observed_actor = gt["true_actor"] if verifier_enabled else None
+        claimed_actor = audit_resolver(
+            source, completion.asserted_executor, verifier_observed_actor
+        )
+    else:  # B6 (mTLS, RFC 8705): the executor presents its OWN cert; the token is
+        # bound to that cert's x5t#S256. verify_cert_binding does the §3 match AND
+        # returns the verified subject. The colluder cannot present another agent's
+        # cert (§4.2), so the verified identity is the true executor.
+        cert_observed_actor = (
+            mtls.verify_cert_binding(
+                mtls.agent_certificate_der(_EXECUTOR),
+                mtls.token_cnf_for(_EXECUTOR),
+            )
+            if verifier_enabled
+            else None
+        )
+        claimed_actor = evidence_resolver(
+            cert_observed_actor, completion.asserted_executor
+        )
 
     # 4. SCORE (reuse the v2 scorer byte-for-byte). The audit chain mirrors the GT
     #    chain SHAPE for the resolved actor: None for the opaque credential, or
@@ -288,3 +349,24 @@ def emit_b8_b9_grid(topology: str = "T1", now_fn=None) -> dict:
             for seat in ("honest", "colluding")
         }
     return grid
+
+
+def emit_b6_grid(topology: str = "T1", now_fn=None) -> dict:
+    """The B6 (mTLS, RFC 8705) AIS grid for one topology.
+
+    Returns {"topology": t, "B6": {"honest": ais, "colluding": ais}}.
+
+    The gate asserts this == the LOCKED prediction (B6 = 1.0 / 1.0,
+    threat-model-v3.0.1.md §A1/§A5) on T1 and T2; a contradiction is a FINDING
+    (INV-7), never coded around. B6 is inert under the colluder: the cert-verified
+    identity overrides the self-reported lie.
+    """
+    return {
+        "topology": topology,
+        "B6": {
+            seat: run_cell("B6", seat=seat, topology=topology, now_fn=now_fn)["result"][
+                "ais"
+            ]
+            for seat in ("honest", "colluding")
+        },
+    }
