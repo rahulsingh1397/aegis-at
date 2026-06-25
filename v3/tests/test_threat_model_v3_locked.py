@@ -38,6 +38,10 @@ LOCKED = [
     # 1.0/1.0, additive over v3.0 (resolves §9 L11). Companion receipts locked too.
     ("threat-model-v3.0.1.md", "threat-model-v3.0.1.sha256"),
     ("source-lock-v3.0.1.md", "source-lock-v3.0.1.sha256"),
+    # v3.1 amendment: Tier-2 LLM-ladder parameters (4 Groq models, prompts,
+    # N/stopping rule, ε); 4-agent reviewed 2026-06-25. Companion receipts locked too.
+    ("threat-model-v3.1.md", "threat-model-v3.1.sha256"),
+    ("source-lock-v3.1.md", "source-lock-v3.1.sha256"),
 ]
 
 
