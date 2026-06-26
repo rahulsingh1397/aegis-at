@@ -44,6 +44,7 @@ from aegis_at_v3.completion.completion_record import (
     SELF_REPORTED,
     TOOL_VERIFIED,
     VALID_SOURCES,
+    sign_completion,
     verify_signature,
 )
 from aegis_at_v3.completion import execution_assertion
@@ -220,6 +221,7 @@ def run_cell(
     audit_resolver=resolve_claimed_actor,
     evidence_resolver=resolve_via_verified_evidence,
     base_credential: str = "apikey",
+    asserted_executor_override: str | None = None,
 ) -> dict:
     """Run one baseline cell for one adversary `seat`; return its AIS result + records.
 
@@ -238,6 +240,9 @@ def run_cell(
     self-report to prove B6's 1.0 is earned by the cert verification.
     `base_credential` selects Contain's execution credential — "apikey" (the locked
     B8/B9 core, GT chain None) or "jwt" (Slice E sensitivity, GT chain-bearing).
+    `asserted_executor_override` (B8/B9 only; raises otherwise) replaces the scripted
+    seat's asserted_executor with an externally supplied value — the Tier-2 LLM seat
+    (Harness_Notes/llm_seat_v3.md); None keeps the scripted path byte-for-byte.
     """
     if topology not in TOPOLOGY_NAMES:
         raise ValueError(
@@ -267,9 +272,23 @@ def run_cell(
     source = (
         attestation_source_for(baseline) if baseline in ("B8", "B9") else SELF_REPORTED
     )
-    completion = adversary.make_completion(
-        seat, source, completion_action_id or _ACTION_ID
-    )
+    if asserted_executor_override is not None:
+        if baseline not in ("B8", "B9"):
+            raise ValueError(
+                f"asserted_executor_override is B8/B9-only (the Tier-2 LLM seat); "
+                f"got baseline {baseline!r}"
+            )
+        completion = sign_completion(
+            completion_action_id or _ACTION_ID,
+            asserted_executor_override,
+            source,
+            adversary.CONTAIN,
+            adversary.contain_private_key(),
+        )
+    else:
+        completion = adversary.make_completion(
+            seat, source, completion_action_id or _ACTION_ID
+        )
 
     # The completion must attest THE executed action, and its signature must
     # verify under the attester's own key — both fail loud otherwise.

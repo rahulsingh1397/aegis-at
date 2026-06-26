@@ -1,0 +1,7 @@
+# OPTIONAL deps — Tier-2 LLM ladder only (v3.1, §C).
+# Deliberately NOT in the root requirements.txt: the deterministic core
+# (B1-B9) must run green WITHOUT a Groq key (off-by-default LLM tests, §7.2.1).
+# Install only when running the LLM-in-the-executor-seat harness:
+#     pip install -r v3/requirements-llm.txt
+groq
+python-dotenv>=1.0

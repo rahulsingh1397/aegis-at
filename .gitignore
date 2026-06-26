@@ -53,6 +53,11 @@ Thumbs.db
 results/*.json
 CLAUDE.md
 
+# Secrets / API keys — NEVER commit (this repo is public)
+.env
+.env.*
+!.env.example
+
 # Cache directories
 .ruff_cache/
 .mypy_cache/
