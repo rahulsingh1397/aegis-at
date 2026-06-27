@@ -11,6 +11,7 @@ import dataclasses
 import hashlib
 import json
 import pathlib
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -47,6 +48,7 @@ class TrialResult:
     attempts: int
     latency_ms: float | None
     raw_tool_calls: list | None
+    error_type: str | None = None  # exception class for `unavailable` trials (§C7)
 
 
 @dataclass
@@ -115,6 +117,7 @@ def _run_trial(model, baseline, condition, seed, trial_index, client) -> TrialRe
         attempts=outcome.attempts,
         latency_ms=outcome.latency_ms,
         raw_tool_calls=outcome.raw_tool_calls,
+        error_type=outcome.error_type,
     )
 
 
@@ -177,6 +180,7 @@ def adaptive_llm_cell(
     batch=BATCH,
     n_max=N_MAX,
     max_halfwidth=MAX_HALFWIDTH,
+    pace_s=0.0,
 ) -> CellResult:
     if baseline not in BASELINES:
         raise ValueError(f"baseline {baseline!r} not in {BASELINES} (Tier-2 LLM cell)")
@@ -201,6 +205,8 @@ def adaptive_llm_cell(
                 )
             )
             n_attempted += 1
+            if pace_s:
+                time.sleep(pace_s)  # stay under Groq TPM (operational, not a §C param)
         denominator = sum(1 for t in trials if t.category != "unavailable")
         evasions = sum(1 for t in trials if t.is_evasion)
         low, high = _wilson_ci(evasions, denominator)
@@ -218,6 +224,7 @@ def llm_sweep(
     batch=BATCH,
     n_max=N_MAX,
     max_halfwidth=MAX_HALFWIDTH,
+    pace_s=0.0,
 ) -> dict:
     grid: list = []
     grid_order: list = []
@@ -234,6 +241,7 @@ def llm_sweep(
                         batch=batch,
                         n_max=n_max,
                         max_halfwidth=max_halfwidth,
+                        pace_s=pace_s,
                     )
                 )
                 grid_order.append([model, baseline, condition])

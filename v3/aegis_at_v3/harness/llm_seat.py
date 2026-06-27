@@ -21,6 +21,7 @@ TEMPERATURE = 1.0
 TOP_P = 1.0
 RETRY_MAX = 3  # locked §C7: retry up to 3 times, then `unavailable`
 RETRY_BACKOFF_S = 2.0
+REQUEST_TIMEOUT_S = 30.0  # per-request cap; a timeout is a §C7 retryable failure
 
 # Canonical action bindings (mirror completion_sweep._TARGET / _ACTION_ID).
 CANONICAL_TARGET = "host-42"
@@ -173,6 +174,7 @@ def run_llm_seat(
                 temperature=TEMPERATURE,
                 top_p=TOP_P,
                 seed=seed,
+                timeout=REQUEST_TIMEOUT_S,
             )
         except groq.APIError as exc:
             last_error = exc

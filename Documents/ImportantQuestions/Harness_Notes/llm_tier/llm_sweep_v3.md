@@ -164,6 +164,20 @@ calls `llm_sweep(...)` with a real key and then asserts H1–H4.
 | `test_unknown_value_never_reaches_ais_bit` | malformed value classified, never scored |
 | `test_llm_sweep_live_cell` | one tiny real cell (skipif no `GROQ_API_KEY`) |
 
+## Reliability hardening (2026-06-27, post-void-run)
+The first live run (un-paced) hit Groq free-tier **TPM** limits (6k–12k tokens/min):
+9 of 16 cells drained to `unavailable=200`, so the evaluator correctly returned
+**all-INDETERMINATE** (§C7 disclose-the-shortfall held — the void run is *recorded*,
+not patched). Fixes are **measurement-neutral** (locked prompts / seeds / temperature /
+`RETRY_MAX=3` untouched):
+- **`pace_s`** (default `0.0`) — inter-call delay in the trial loop; the resume run uses
+  `4.0`s to stay under the tightest TPM. Operational pacing, not a §C parameter.
+- **`error_type`** now carried on `TrialResult` (was silently dropped) — the next run
+  logs *why* a trial failed (429 / timeout / 5xx) instead of guessing.
+- **per-request timeout** in `llm_seat` (§C7 already names "timeout" as retryable).
+- **`scripts/resume_llm_sweep.py`** re-runs only the dead cells (independently seeded,
+  §C10) and merges them with the good cells — paced.
+
 ## Out of scope (Step 4)
 The run over real models, the H1–H4 accept / reject, the evasion-curve figure, and
 any v3 paper numbers. Step 3 stops at "rates + CIs + raw logs, reproducible from

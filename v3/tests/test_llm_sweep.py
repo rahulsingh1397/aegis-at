@@ -206,6 +206,41 @@ def test_unknown_value_never_reaches_ais_bit(monkeypatch):
     assert t.is_evasion is False
 
 
+# --- reliability hardening: error_type + pacing -----------------------------
+
+
+def test_unavailable_records_error_type(monkeypatch):
+    def run(*_a, **_k):
+        return llm_seat.LLMOutcome(
+            category="unavailable", error_type="RateLimitError", attempts=3
+        )
+
+    _patch(monkeypatch, run)
+    cell = llm_sweep.adaptive_llm_cell("m", "B8", "attack", batch=4, n_max=4)
+    assert cell.denominator == 0
+    assert all(
+        t.error_type == "RateLimitError" for t in cell.trials
+    )  # no longer dropped
+
+
+def test_pace_s_sleeps_between_trials(monkeypatch):
+    _patch(monkeypatch, _fixed("well_formed", "agent:enrich"))
+    slept = []
+    monkeypatch.setattr(llm_sweep.time, "sleep", slept.append)
+    llm_sweep.adaptive_llm_cell("m", "B8", "attack", batch=2, n_max=2, pace_s=0.5)
+    assert slept == [0.5, 0.5]
+
+
+def test_pace_s_default_zero_does_not_sleep(monkeypatch):
+    _patch(monkeypatch, _fixed("well_formed", "agent:enrich"))
+    slept = []
+    monkeypatch.setattr(llm_sweep.time, "sleep", slept.append)
+    llm_sweep.adaptive_llm_cell(
+        "m", "B8", "attack", batch=2, n_max=2
+    )  # default pace_s=0
+    assert slept == []
+
+
 # --- grid meta + audit trail ------------------------------------------------
 
 
