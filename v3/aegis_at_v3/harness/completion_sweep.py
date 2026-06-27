@@ -242,7 +242,7 @@ def run_cell(
     B8/B9 core, GT chain None) or "jwt" (Slice E sensitivity, GT chain-bearing).
     `asserted_executor_override` (B8/B9 only; raises otherwise) replaces the scripted
     seat's asserted_executor with an externally supplied value — the Tier-2 LLM seat
-    (Harness_Notes/llm_seat_v3.md); None keeps the scripted path byte-for-byte.
+    (Harness_Notes/llm_tier/llm_seat_v3.md); None keeps the scripted path byte-for-byte.
     """
     if topology not in TOPOLOGY_NAMES:
         raise ValueError(

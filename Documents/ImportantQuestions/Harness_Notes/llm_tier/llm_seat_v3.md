@@ -11,7 +11,7 @@
 
 ## What it is
 The **LLM in the executor seat** — the Tier-2 analog of the scripted
-[`adversary.py`](../Harness_Notes/adversary_v3.md). It swaps the scripted attacker
+[`adversary.py`](../adversary_v3.md). It swaps the scripted attacker
 for a real model that produces ONE field, `asserted_executor`, via a structured tool
 call. Everything else is the same instrument: Contain still signs the completion, the
 OS-process recorder is still ground truth (INV-4), and B8/B9 resolution + the scorer

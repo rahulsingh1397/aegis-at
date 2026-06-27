@@ -3,12 +3,14 @@
 One note per harness component, each answering *why it's shaped this way* (rationale
 + a Rule-9 test map) — not API docs. Grouped by lineage below.
 
-**Convention:** new notes go **flat** in this folder (e.g. `adversary_v3.md`). The
-single-file subfolders under "Reused primitives" are legacy — don't add more of them.
+**Convention:** the Tier-2 LLM notes (a real, growing cluster) live in `llm_tier/`;
+other component notes sit flat here. The single-file subfolders under "Reused
+primitives" are legacy — don't add more of those.
 
 ## Tier-2 — LLM ladder (v3.1)
-- [llm_seat_v3.md](llm_seat_v3.md) — LLM-in-the-executor-seat adapter (Step 2); outcome-only, strict §C7 classification · `harness/llm_seat.py`
-- [llm_sweep_v3.md](llm_sweep_v3.md) — adaptive sweep driver (Step 3); batches → Wilson CIs → evasion rates · `harness/llm_sweep.py`
+- [llm_tier/llm_tier_explained.md](llm_tier/llm_tier_explained.md) — plain-English overview of the seat + adaptive sweep (start here)
+- [llm_tier/llm_seat_v3.md](llm_tier/llm_seat_v3.md) — LLM-in-the-executor-seat adapter (Step 2); outcome-only, strict §C7 classification · `harness/llm_seat.py`
+- [llm_tier/llm_sweep_v3.md](llm_tier/llm_sweep_v3.md) — adaptive sweep driver (Step 3); batches → Wilson CIs → evasion rates · `harness/llm_sweep.py`
 
 ## v3 completion-attestation core (B6–B9)
 - [adversary_v3.md](adversary_v3.md) — scripted adversary seats (honest / colluding) · `harness/adversary.py`

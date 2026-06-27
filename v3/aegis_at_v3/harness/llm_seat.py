@@ -1,6 +1,6 @@
 """LLM-in-the-executor-seat adapter (v3.1 Tier-2, Step 2).
 
-Spec: threat-model-v3.1.md §C6/§C7/§C10. Design: Harness_Notes/llm_seat_v3.md.
+Spec: threat-model-v3.1.md §C6/§C7/§C10. Design: Harness_Notes/llm_tier/llm_seat_v3.md.
 Outcome-only: returns an LLMOutcome; AIS scoring stays in the existing B8/B9 path.
 `groq` is imported lazily so the deterministic core (B1-B9) runs without the SDK.
 """

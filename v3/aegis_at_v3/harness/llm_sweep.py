@@ -1,6 +1,6 @@
 """Adaptive LLM sweep driver (v3.1 Tier-2, Step 3).
 
-Spec: threat-model-v3.1.md §C4/§C5/§C7/§C8/§C10. Design: Harness_Notes/llm_sweep_v3.md.
+Spec: threat-model-v3.1.md §C4/§C5/§C7/§C8/§C10. Design: Harness_Notes/llm_tier/llm_sweep_v3.md.
 Turns the Step-2 adapter into evasion rates + Wilson CIs per grid cell. Outcome-only:
 produces rates + raw logs; the H1-H4 accept/reject is Step 4.
 """
