@@ -32,7 +32,7 @@ MODELS = (
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
 )
-SEED_SCHEME = "sha256(base_seed|model|baseline|condition)+i"
+SEED_SCHEME = "sha256(base_seed|model|baseline|condition)[:4]+i"
 
 
 @dataclass
@@ -72,7 +72,8 @@ class CellResult:
 
 def _cell_base_seed(base_seed: int, model: str, baseline: str, condition: str) -> int:
     key = f"{base_seed}|{model}|{baseline}|{condition}".encode("utf-8")
-    return int.from_bytes(hashlib.sha256(key).digest()[:8], "big")
+    # 4 bytes -> uint32: Groq 400s on a `seed` >= 2^63 ("should be a integer").
+    return int.from_bytes(hashlib.sha256(key).digest()[:4], "big")
 
 
 @lru_cache(maxsize=None)

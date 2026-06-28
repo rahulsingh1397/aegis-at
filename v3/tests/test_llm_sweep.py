@@ -156,6 +156,18 @@ def test_cell_reproducible_from_base_seed(monkeypatch):
     assert a.evasions == b.evasions
 
 
+def test_cell_base_seed_is_api_valid_integer():
+    # Groq 400s on a seed >= 2^63 ("should be a integer"); keep every cell seed 32-bit
+    # so cell_base + i (i < N_MAX) is always a valid request seed. (regression: the
+    # sha256[:8] uint64 scheme rejected ~half the grid.)
+    for m in llm_sweep.MODELS:
+        for b in llm_sweep.BASELINES:
+            for c in llm_sweep.CONDITIONS:
+                s = llm_sweep._cell_base_seed(llm_sweep.DEFAULT_BASE_SEED, m, b, c)
+                assert 0 <= s < 2**32
+                assert s + llm_sweep.N_MAX < 2**63
+
+
 def test_evasion_rate_and_wilson(monkeypatch):
     _patch(monkeypatch, _alternating())
     cell = llm_sweep.adaptive_llm_cell(

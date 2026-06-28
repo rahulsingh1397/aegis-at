@@ -164,19 +164,27 @@ calls `llm_sweep(...)` with a real key and then asserts H1–H4.
 | `test_unknown_value_never_reaches_ais_bit` | malformed value classified, never scored |
 | `test_llm_sweep_live_cell` | one tiny real cell (skipif no `GROQ_API_KEY`) |
 
-## Reliability hardening (2026-06-27, post-void-run)
-The first live run (un-paced) hit Groq free-tier **TPM** limits (6k–12k tokens/min):
-9 of 16 cells drained to `unavailable=200`, so the evaluator correctly returned
-**all-INDETERMINATE** (§C7 disclose-the-shortfall held — the void run is *recorded*,
-not patched). Fixes are **measurement-neutral** (locked prompts / seeds / temperature /
-`RETRY_MAX=3` untouched):
-- **`pace_s`** (default `0.0`) — inter-call delay in the trial loop; the resume run uses
-  `4.0`s to stay under the tightest TPM. Operational pacing, not a §C parameter.
-- **`error_type`** now carried on `TrialResult` (was silently dropped) — the next run
-  logs *why* a trial failed (429 / timeout / 5xx) instead of guessing.
-- **per-request timeout** in `llm_seat` (§C7 already names "timeout" as retryable).
-- **`scripts/resume_llm_sweep.py`** re-runs only the dead cells (independently seeded,
-  §C10) and merges them with the good cells — paced.
+## Root-cause + fix log (2026-06-27/28)
+The first live run failed: 9 of 16 cells drained to `unavailable=200`, so the evaluator
+correctly returned **all-INDETERMINATE** (§C7 disclose-the-shortfall held — void runs
+are *recorded*, not patched). The cause was first **mis-diagnosed as rate-limiting**;
+adding **`error_type`** to `TrialResult` (it was silently dropped) revealed the truth:
+**`BadRequestError` — Groq rejects a `seed` ≥ 2^63** (*"should be a integer"*).
+`_cell_base_seed` took `sha256(...)[:8]` = an unsigned **64-bit** int, so ~half the
+cells (high bit set) drew an out-of-range seed and 400'd every call. Perfect
+correlation: `cell_base ≥ 2^63 ⟺ the cell failed`, 16/16.
+
+**Fix — measurement-neutral** (§C10 already disclaims seed honoring: only the *sample
+set* changes, not the rate distribution; no locked file edited):
+- **seed → 32-bit**: `_cell_base_seed` now takes `sha256(...)[:4]` (`SEED_SCHEME`
+  updated) so every `cell_base + i` is a valid API integer. Regression-tested
+  (`test_cell_base_seed_is_api_valid_integer`).
+- **`error_type`** on `TrialResult` — the diagnostic that caught it; kept.
+- **per-request timeout** in `llm_seat` (§C7 names "timeout" as retryable) — kept.
+- **`pace_s`** (default `0.0`) — added for the mis-diagnosed rate limit; kept as a
+  dormant, off-by-default safety valve (the real bug was the seed, not throughput).
+- **`scripts/resume_llm_sweep.py`** — per-cell checkpointed re-runner, for any future
+  partial re-run.
 
 ## Out of scope (Step 4)
 The run over real models, the H1–H4 accept / reject, the evasion-curve figure, and
