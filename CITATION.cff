@@ -20,12 +20,12 @@ abstract: >-
   holds, and that four open-weight LLMs forge the executor claim under B8 while
   B9 evasion stays zero. Adds mTLS (RFC 8705) and A-JWT comparative baselines.
 license: Apache-2.0
-# `doi` below is the Zenodo CONCEPT DOI (all versions) — it always resolves to the
-# latest release and stays CONSTANT across releases. When the v3 release is cut,
-# bump ONLY `version` + `date-released` (do NOT change this doi). The v2.0.1
-# version-specific DOI is 10.5281/zenodo.20693304, verified via the Zenodo API.
-version: "v2.0.1"
-date-released: "2026-06-14"
+# `doi` below is the Zenodo CONCEPT DOI (all versions) — it resolves to the latest
+# release and stays CONSTANT across releases. At each release bump ONLY `version` +
+# `date-released` (never this doi). Version-specific DOIs live on each Zenodo record
+# (v2.0.1 = 10.5281/zenodo.20693304; the v3.0.0 version DOI is minted at release).
+version: "v3.0.0"
+date-released: "2026-07-03"
 doi: "10.5281/zenodo.20693303"
 keywords:
   - multi-agent systems
