@@ -1,12 +1,13 @@
 # AEGIS-AT — Papers
 
 This directory holds the AEGIS-AT benchmark papers, organized to mirror the
-repository's `v1/` (frozen) / `v2/` (active) split.
+repository's `v1/` (frozen), `v2/`, and `v3/` split.
 
 | Version | Path | Title | Length | Status |
 | :---: | :--- | :--- | :---: | :--- |
 | **v1** | [`v1/aegis-at.tex`](./v1/aegis-at.tex) ·  [`v1/aegis-at.pdf`](./v1/aegis-at.pdf) | *AEGIS-AT: Measuring Attribution Integrity Under Sibling Impersonation in Multi-Agent Delegation* | 17 pp | Frozen with [`v1/`](../../v1/) (git tag `v1.0.0`) |
 | **v2** | [`v2/aegis-at-v2.tex`](./v2/aegis-at-v2.tex) ·  [`v2/aegis-at-v2.pdf`](./v2/aegis-at-v2.pdf) | *AEGIS-AT v2: Does Sender-Constraint Recover Attribution?* | 14 pp | Active; extends v1 with Baseline 5 (DPoP), LIS, T2, stochastic CIs |
+| **v3** | [`v3/aegis-at-v3.tex`](./v3/aegis-at-v3.tex) ·  [`v3/aegis-at-v3.pdf`](./v3/aegis-at-v3.pdf) | *AEGIS-AT v3: Who Attests the Completion?* | 17 pp | Active; adds the completion-record layer (B8/B9), B6/B7 comparative breadth, and a 4-model real-LLM tier |
 
 `.tex` is the citable source of truth for each version. v1 also keeps a
 GitHub-rendered [`aegis-at.md`](./v1/aegis-at.md) companion.
@@ -24,25 +25,36 @@ Documents/Paper/
 │   ├── aegis-at.md            GitHub-rendered v1 companion
 │   ├── Makefile               builds aegis-at.pdf
 │   └── EDIT_PLAN_sentinelagent_relatedwork.md   v1 editorial planning notes
-└── v2/
-    ├── aegis-at-v2.tex        v2 LaTeX source
-    ├── aegis-at-v2.pdf        compiled v2 (14 pp)
-    ├── Makefile               builds aegis-at-v2.pdf; also `make figures`
+├── v2/
+│   ├── aegis-at-v2.tex        v2 LaTeX source
+│   ├── aegis-at-v2.pdf        compiled v2 (14 pp)
+│   ├── Makefile               builds aegis-at-v2.pdf; also `make figures`
+│   └── figures/
+│       ├── make_figures.py    regenerates the 3 figures from the live harness
+│       ├── fig_ais_curve.{pdf,png}
+│       ├── fig_ais_lis.{pdf,png}
+│       └── fig_stochastic_ci.{pdf,png}
+└── v3/
+    ├── aegis-at-v3.tex        v3 LaTeX source
+    ├── aegis-at-v3.pdf        compiled v3 (17 pp)
+    ├── Makefile               builds aegis-at-v3.pdf; also `make figures`
+    ├── OUTLINE.md             section-by-section planning notes
+    ├── data/
+    │   └── llm_sweep_v3.json  frozen Tier-2 sweep (figure artifact)
     └── figures/
-        ├── make_figures.py    regenerates the 3 figures from the live harness
-        ├── fig_ais_curve.{pdf,png}
-        ├── fig_ais_lis.{pdf,png}
-        └── fig_stochastic_ci.{pdf,png}
+        ├── make_figures.py    Tier-1 from live harness; Tier-2 from data/llm_sweep_v3.json
+        ├── fig_ais_curve_v3.{pdf,png}
+        └── fig_llm_forging.{pdf,png}
 ```
 
-The v2 paper uses `\graphicspath{{figures/}}`, so its `.tex` and
+The v2 and v3 papers use `\graphicspath{{figures/}}`, so their `.tex` and
 `figures/` are intentionally co-located.
 
 ---
 
 ## Building
 
-Both papers compile with any standard TeX distribution (TeX Live, MiKTeX).
+All three papers compile with any standard TeX distribution (TeX Live, MiKTeX).
 Each uses only standard packages — no custom `.sty` / `.bib`; the bibliography
 is a self-contained `thebibliography`.
 
@@ -53,6 +65,10 @@ cd Documents/Paper/v1 && make           # builds aegis-at.pdf
 # v2 (active)
 cd Documents/Paper/v2 && make figures   # regenerate figures from the harness
 make                                    # then build aegis-at-v2.pdf
+
+# v3 (active)
+cd Documents/Paper/v3 && make figures   # Tier-1 from harness; Tier-2 from the frozen sweep
+make                                    # then build aegis-at-v3.pdf
 ```
 
 Manually (two passes resolve the TOC + cross-references):
@@ -99,6 +115,19 @@ reported as a finding, not reconciled (INV-7).
 
 The v1 paper's numbers are similarly fixed by `Documents/ThreatModel/threat-model.md`
 and the 59 frozen tests under `v1/tests/core/`.
+
+The v3 paper's numbers are fixed by a two-stage lock under
+[`Documents/ThreatModel/ThreatModelv3/`](../ThreatModel/ThreatModelv3/): the
+deterministic core [`threat-model-v3.md`](../ThreatModel/ThreatModelv3/threat-model-v3.md)
+(scripted B8/B9, exact equality), the B6/B7 amendment
+[`threat-model-v3.0.1.md`](../ThreatModel/ThreatModelv3/threat-model-v3.0.1.md),
+and the LLM-tier parameter lock
+[`threat-model-v3.1.md`](../ThreatModel/ThreatModelv3/threat-model-v3.1.md)
+(directional hypotheses H1–H4, Wilson containment) — each SHA-256-locked with a
+companion `source-lock-v3*.md` of primary-source receipts (INV-8). The Tier-1
+figure regenerates from the live v3 harness; the Tier-2 figure is drawn from the
+frozen sweep artifact [`v3/data/llm_sweep_v3.json`](./v3/data/llm_sweep_v3.json)
+(statistically, not byte, reproducible).
 
 ---
 

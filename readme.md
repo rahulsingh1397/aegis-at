@@ -3,26 +3,40 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20693303.svg)](https://doi.org/10.5281/zenodo.20693303)
 &nbsp;[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**Adding the industry-standard delegation mechanism to a correctly-functioning
-multi-agent AI system makes audit attribution *worse*, not better — and v2
-measures the standardized layer that puts it right.**
+**AEGIS-AT measures whether an audit log names the agent that actually performed
+an action when a sibling-agent impersonation attack is in play.**
 
-AEGIS-AT is a red-team benchmark that measures whether delegation-chain
-attribution survives a realistic sibling-impersonation attack in a multi-agent
-system. It implements a minimal Security Operations Center (SOC) pipeline and
-measures an **Attribution Integrity Score (AIS)** across progressive defense
-baselines applied as configuration flags over a single codebase.
+It is a public red-team benchmark for attribution integrity in multi-agent AI.
+The harness implements a deliberately small Security Operations Center (SOC)
+pipeline, runs the same scenario across progressive defense baselines, and scores
+whether the logged `(actor, scope, principal_chain)` matches independently
+observed ground truth using the **Attribution Integrity Score (AIS)**.
+
+## Project arc
+
+- **v1 — the executor has no field.** RFC 8693 delegation names the requester,
+  not necessarily the agent that executed the action, so AIS regresses from
+  **1.0** to **0.0**.
+- **v2 — bind the token to the executor's key.** DPoP sender-constraint recovers
+  AIS to **1.0**; tamper-evident logging alone only preserves a truthful-looking
+  record of the wrong actor.
+- **v3 — completion records now exist, but who attests them?** Self-reported
+  completions fail under collusion. Independently observed/tool-verified
+  attribution holds. Four real LLMs forge the self-reported executor under
+  attack, while B9 remains **0% evasion**.
+
+**In one sentence:** self-reported attribution is not enough; executor identity
+must come from evidence the executor cannot author.
 
 > **v1 is frozen** (git tag `v1.0.0`, under [`v1/`](v1/)) as a self-contained
-> artifact: the four-baseline curve, 59 deterministic tests, and a 17-page
-> paper. **v2 is active** (under [`v2/`](v2/)): it adds Baseline 5
-> (sender-constraint), a real process-boundary recorder, a hash-chained log +
-> Log Integrity Score, a second topology, and stochastic confidence intervals.
-> This README describes v2; for the v1-only artifact see [`v1/README.md`](v1/aegis-at/README.md).
+> artifact. **v2** adds sender-constraint, a process-boundary recorder,
+> tamper-evident logging, topology depth, and stochastic confidence intervals.
+> **v3** adds completion-record attribution, B6–B9, and the Tier-2 real-model LLM
+> ladder. For the v1-only artifact see [`v1/README.md`](v1/aegis-at/README.md).
 
 ---
 
-## The finding
+## The v2 finding
 
 ![AIS across five baselines, two topologies](Documents/Paper/v2/figures/fig_ais_curve.png)
 
@@ -91,18 +105,17 @@ numbers stay comparable to v1's:
 Picture a hospital's automated security response. A low-privilege triage agent
 reads an alert and escalates; a high-privilege containment agent quarantines a
 machine. Afterward the audit log must answer one question: *which agent took the
-high-consequence action?* Under standard delegation the log names the agent that
-**requested** containment, not the one that **executed** it — so an attacker who
-shapes the triggering alert can cause a high-privilege action to be attributed to
-the wrong, lower-privilege agent, covering the real executor's tracks while
-looking fully spec-compliant.
+high-consequence action?* If the system trusts the agent's own report, an
+attacker who shapes the alert can make the executor pin its action on a sibling
+agent while the record still looks signed, structured, and compliant.
 
 The standards landscape is actively asking for exactly this measurement (NIST
 NCCoE, Feb 2026; OpenID Foundation, Mar 2026), and the confused-deputy gap has
 shown up in production (the "Clinejection" incident, Feb 2026). AEGIS-AT measures
-the attribution question one layer down — *when a privileged action is taken
-through delegation, does the audit record name the agent that executed it?* — and
-v2 measures which standardized layer fixes it.
+the attribution question one layer down — *when a privileged action is taken, does
+the audit record name the agent that executed it?* v2 shows which standardized
+execution-time layer fixes requester/executor confusion; v3 shows the same lesson
+again for completion-era self-reporting under a real-model adversary.
 
 ---
 
@@ -114,55 +127,50 @@ measurement is defensible:
 - **Two agents, one tool** (T1; three agents for T2). `Agent-Enrich`
   (low-privilege, read-only) and `Agent-Contain` (high-privilege, executes
   `isolate_host`) share a single scope-gated SOAR tool, `siem_action`.
-- **One attack.** A containment-warranting alert — with attacker-controlled
-  text — flows through Enrich; Enrich correctly escalates; the orchestrator
-  honestly mints a delegation token naming the requester; Contain (the executor)
-  wields it. The log names the requester, not Contain.
-- **Baselines as config flags over one codebase** — identical tool / recorder /
-  scorer code, only the credential differs. This is what makes the AIS values
-  comparable rather than apples-to-oranges (INV-6).
-- **An independent ground-truth recorder.** In v2 it observes the *true*
-  executing **OS process** (`os.getpid()`), never the token, so the score
-  compares what the system *claims* against what *actually happened*. To
-  observe the executing agent's PID, the tool call is mediated by the harness
-  (the agent ships its credential + DPoP proof over IPC; the harness runs the
-  tool for it) — a substrate change from v1 that does not affect the result,
-  disclosed in `threat-model-v2.1.md` §A1 and the paper's validity threats.
-- **Two strict metrics.** AIS — fraction of adversarial actions whose claimed
-  `(actor, scope, principal_chain)` exactly matches ground truth. LIS — fraction
-  of post-hoc log tampers detected. Scored and reported separately.
+- **One core question.** After a high-consequence action, does the audit record
+  name the agent that actually executed it?
+- **One attack family.** Attacker-controlled alert text steers the system toward
+  sibling misattribution: first through requester/executor confusion in the
+  delegation chain, then through a forged self-reported completion record.
+- **Baselines as config flags over one codebase.** The tool, recorder, and scorer
+  stay shared; each baseline changes the attribution source or credential binding.
+  This keeps AIS values comparable rather than apples-to-oranges.
+- **Independent ground truth.** The recorder observes the true executing OS
+  process (`os.getpid()`), never a token, completion field, or agent-supplied
+  identity. The score compares what the system claims against what happened.
+- **Strict metrics.** AIS is the fraction of adversarial actions whose claimed
+  `(actor, scope, principal_chain)` exactly matches ground truth. LIS separately
+  measures whether post-hoc log tampering is detected.
 
 ---
 
 ## Status
 
-| Layer        | Artifacts                                                                                   | State |
-| :----------- | :------------------------------------------------------------------------------------------ | :---- |
-| Pre-registration | `Documents/ThreatModel/ThreatModelv2/threat-model-v2.md` (+ `.1` amendment) + `.sha256` locks + CI gate | Locked; edit fails the build |
-| v1 (frozen)  | `v1/aegis-at/`, `v1/tests/core/`, `v1/scripts/check.sh`                                      | **59 tests; tag `v1.0.0`** |
-| v2 auth      | `auth/tokens.py` (+`cnf`), `auth/dpop.py`                                                    | DPoP sender-constraint |
-| v2 harness   | `harness/{agent_proc,agent_bodies,recorder,tamper_log,scorer,sweep,stochastic}.py`          | process boundary, LIS, stochastic |
-| v2 topologies| `topologies/{two_agent,three_agent}.py`                                                      | T1 + T2 |
-| **Total**    |                                                                                             | **74 v2 tests + 59 v1 tests green; both gates exit 0** |
+| Layer | Artifacts | State |
+| :-- | :-- | :-- |
+| v1 | `v1/aegis-at/`, `v1/tests/core/`, `v1/scripts/check.sh`, `Documents/Paper/v1/` | **Frozen at tag `v1.0.0`** |
+| v2 | `v2/aegis_at_v2/`, `v2/tests/`, `Documents/ThreatModel/ThreatModelv2/`, `Documents/Paper/v2/` | Sender-constraint result complete |
+| v3 | `v3/aegis_at_v3/`, `v3/tests/`, `Documents/ThreatModel/ThreatModelv3/`, `Documents/Paper/v3/` | Completion-record + real-model LLM tier complete; paper in progress |
 
-Every predicted value (the B1–B5 curve on both topologies, the LIS curve, the
-stochastic point predictions) is **pre-registered** in the SHA-256-locked threat
-model *before* the measuring code was written; a contradicted prediction is
-reported as a finding, not reconciled. All figures regenerate from the live
-harness.
+Every predicted value is **pre-registered** in SHA-256-locked threat models before
+the measuring code that asserts it. Contradicted predictions are reported as
+findings, not reconciled. Tier-1 figures regenerate from the live harness; Tier-2
+LLM figures are drawn from the recorded sweep.
 
-### Scope (what v2 is, and isn't)
+### Scope
 
 Deliberate boundaries, stated up front:
 
-- **DPoP only, not mutual-TLS.** RFC 8705 certificate-bound tokens (a "Baseline
-  5b", predicted to behave identically) are deferred to v3.
-- **Two linear topologies (n = 2).** Fan-in and cross-organization delegation
-  add confounds and are deferred to v3.
-- **Scripted agents, no LLM.** Agents are deterministic by design — this isolates
-  the delegation-layer failure from model behavior.
-- **Synthetic policy.** The Bernoulli(p) escalation is a controlled synthetic
-  policy; real attack-frequency telemetry awaits an industry partner.
+- **v1/v2 are deterministic/scripted.** They isolate delegation-layer attribution
+  from model behavior.
+- **v3 adds real models only for B8/B9.** The LLM tier tests self-reported vs
+  independently observed completion attribution, not every baseline.
+- **One focused attack family.** The benchmark measures sibling-agent
+  misattribution under controlled alert-text injection/collusion, not every
+  possible agent-security failure.
+- **Independent observation is the key defense.** DPoP, mTLS, A-JWT, and
+  process-boundary/tool verification all recover attribution because they resolve
+  executor identity from evidence the executor cannot author.
 
 ---
 
@@ -171,33 +179,36 @@ Deliberate boundaries, stated up front:
 ```bash
 pip install -r requirements.txt
 
-# v2 (active) — 74 tests
-cd v2 && python -m pytest -q
+# v3 — deterministic gate; live LLM tests skip without GROQ_API_KEY
+(cd v3 && bash scripts/check_v3.sh)
 
-# v1 (frozen) — 59 tests, original gate
-cd v1 && bash scripts/check.sh
+# v2 — sender-constraint result
+(cd v2 && python -m pytest -q)
+
+# v1 (frozen) — original gate
+(cd v1 && bash scripts/check.sh)
 
 # verify the pre-registration locks (LF-normalized, same as the CI gate).
 # The canonical check is the pytest gate above; this reproduces it by hand:
 python - <<'PY'
 import hashlib, pathlib
-d = pathlib.Path("Documents/ThreatModel/ThreatModelv2")
-for stem in ("threat-model-v2", "threat-model-v2.1"):
+d = pathlib.Path("Documents/ThreatModel/ThreatModelv3")
+for stem in ("threat-model-v3", "threat-model-v3.0.1", "threat-model-v3.1"):
     got = hashlib.sha256((d/f"{stem}.md").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     want = (d/f"{stem}.sha256").read_text().split()[0]
     print(stem, "OK" if got == want else "DRIFT")
 PY
 
-# regenerate the paper figures from the live harness
-python Documents/Paper/v2/figures/make_figures.py
+# regenerate the v3 paper figures from the harness/recorded sweep
+python Documents/Paper/v3/figures/make_figures.py
 
-# build the v2 paper (requires a LaTeX toolchain)
-cd Documents/Paper/v2 && pdflatex aegis-at-v2.tex   # or: make
+# build the v3 paper (requires a LaTeX toolchain)
+(cd Documents/Paper/v3 && pdflatex aegis-at-v3.tex)   # or: make
 ```
 
-The full pipeline reproduces in seconds (the stochastic grid included — per-cell
-correctness is deterministic, so the sweep evaluates each cell once and draws the
-escalation events).
+The deterministic gates reproduce without any provider key. Tier-2 LLM rates are
+statistically reproducible from the recorded sweep; live provider calls require
+`GROQ_API_KEY` and are not part of the default deterministic gate.
 
 ---
 
@@ -206,36 +217,32 @@ escalation events).
 ```
 Documents/
   ThreatModel/
-    threat-model.md            v1 — frozen 8-section argument.
-    threat-model-v2.md         v2 — §3 recorder, §5 DPoP, §6 LIS, §7 T2, §8 stochastic.
-    threat-model-v2.sha256     pre-registration lock (CI-gated).
+    threat-model.md                     v1 — frozen 8-section argument.
+    ThreatModelv2/                      v2 — locked DPoP/process-boundary/stochastic argument.
+    ThreatModelv3/                      v3 — locked B6–B9 + LLM-tier argument.
   Paper/
-    v1/aegis-at.tex / .pdf     v1 paper (frozen, 17pp).
-    v2/aegis-at-v2.tex / .pdf  v2 paper (active, 14pp).
-    v2/figures/make_figures.py regenerates all figures from the harness.
-  ImportantQuestions/          Working notes — the *why* behind each module.
-  InitialDocs/v2/              Consolidated v2 reference.
-v1/                            FROZEN at tag v1.0.0 (aegis-at/, tests/, scripts/).
-v2/aegis_at_v2/
-  auth/tokens.py               RFC 8693 token mint + chain (+ optional cnf).
-  auth/dpop.py                 DPoP sender-constraint (Ed25519, proof, replay cache).
-  policy/scope_map.py          Shared command→scope contract.
-  tools/siem_action.py         Scope-gated SOAR tool (+ DPoP proof check).
-  orchestrator/orchestrator.py RFC 8693 minter (+ cnf binding).
-  harness/agent_proc.py        Process-boundary kernel (os.getpid registry).
-  harness/agent_bodies.py      Code that runs inside agent subprocesses.
-  harness/recorder.py          Independent ground-truth recorder (PID-based).
-  harness/tamper_log.py        Hash-chained, signed tamper-evident log.
-  harness/scorer.py            AIS + LIS metrics; non-monotonicity predicate.
-  harness/sweep.py             Baseline + topology switch; emits the curves.
-  harness/stochastic.py        Bernoulli(p) sweep, Wilson CIs, adaptive N.
-  topologies/                  T1 (2-agent) and T2 (3-agent) as data.
-v2/tests/                      74 tests across phases 1–6.
+    v1/aegis-at.tex / .pdf              v1 paper.
+    v2/aegis-at-v2.tex / .pdf           v2 paper.
+    v3/aegis-at-v3.tex / .pdf           v3 paper.
+    v3/figures/make_figures.py          regenerates v3 figures.
+  ImportantQuestions/                   Working notes — the *why* behind each module.
+  InitialDocs/v2/                       Consolidated v2 reference.
+v1/                                     frozen at tag v1.0.0.
+v2/aegis_at_v2/                         RFC 8693, DPoP, recorder, scorer, sweep.
+v3/aegis_at_v3/
+  auth/mtls.py                          B6 mTLS certificate binding.
+  completion/completion_record.py       B8/B9 completion-record abstraction.
+  completion/execution_assertion.py     B7 A-JWT-style execution assertion.
+  harness/completion_sweep.py           deterministic B1–B9 sweep.
+  harness/llm_{seat,sweep,eval}.py      Tier-2 real-model ladder.
+  transport/mcp_adapter.py              MCP-shaped no-token-passthrough boundary.
+v3/tests/                               deterministic core + LLM evaluator tests.
 ```
 
-Start with `Documents/ThreatModel/ThreatModelv2/threat-model-v2.md` (and its
-locked `threat-model-v2.1.md` amendment) for the v2 argument, or
-`v2/aegis_at_v2/harness/sweep.py` + `v2/tests/` for the executable result.
+Start with `Documents/Paper/v3/aegis-at-v3.pdf` for the full current argument,
+`Documents/ThreatModel/ThreatModelv3/threat-model-v3.1.md` for the locked LLM-tier
+hypotheses, or `v3/aegis_at_v3/harness/completion_sweep.py` + `v3/tests/` for the
+executable result.
 
 ---
 
@@ -278,7 +285,7 @@ incidents. All citations were checked against their live primary sources.
 - *The Misattribution Gap* (2026) measures model-vs-memory misattribution —
   adjacent, but a different layer (memory poisoning, not delegation-chain
   attribution). *SentinelAgent / DelegationBench* measures *detection*, not
-  *attribution integrity*. See the v2 paper (`Documents/Paper/v2/aegis-at-v2.tex`)
+  *attribution integrity*. See the v3 paper (`Documents/Paper/v3/aegis-at-v3.tex`)
   for the full positioning.
 
 ---
@@ -287,8 +294,8 @@ incidents. All citations were checked against their live primary sources.
 
 This repository is dual-licensed:
 
-- **Code** — everything under `v1/aegis-at/`, `v2/`, and the test/script trees —
-  is licensed under the **Apache License 2.0**. See [`LICENSE`](LICENSE).
+- **Code** — everything under `v1/aegis-at/`, `v2/`, `v3/`, and the test/script
+  trees — is licensed under the **Apache License 2.0**. See [`LICENSE`](LICENSE).
 - **Documentation** — everything under `Documents/` — is licensed under **Creative
   Commons Attribution 4.0 International (CC BY 4.0)**. See
   [`Documents/LICENSE-docs`](Documents/LICENSE-docs).
