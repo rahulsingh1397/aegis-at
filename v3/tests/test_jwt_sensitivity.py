@@ -1,5 +1,5 @@
 """
-JWT sensitivity check — Slice E (MASTER_PLAN_v3 P2; threat-model-v3.md §7.4, §9 L14).
+JWT sensitivity check — Slice E (threat-model-v3.md §7.4, §9 L14).
 
 NON-LOCKED. The locked B8/B9 core runs Contain under an OPAQUE per-agent credential,
 so ground truth carries `principal_chain = None` and the only field the attestation

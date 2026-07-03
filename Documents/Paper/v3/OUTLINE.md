@@ -1,6 +1,7 @@
 # AEGIS-AT v3 paper — section outline (planning note, pre-draft)
 
-> **Status:** scoping note for P5 (`MASTER_PLAN_v3.md §P5`). Not the `.tex`. Mirrors the
+> **Status:** scoping note that guided the P5 draft (now complete — see
+> `aegis-at-v3.tex`). Not the `.tex`. Mirrors the
 > v2 paper's architecture/voice (`Documents/Paper/v2/aegis-at-v2.tex`). Review this
 > before any LaTeX is written. Discipline carried from v1/v2: every AIS/rate asserted by
 > a test against a **locked** prediction; figures regenerate from the live harness; a

@@ -11,6 +11,7 @@ primitives" are legacy — don't add more of those.
 - [llm_tier/llm_tier_explained.md](llm_tier/llm_tier_explained.md) — plain-English overview of the seat + adaptive sweep (start here)
 - [llm_tier/llm_seat_v3.md](llm_tier/llm_seat_v3.md) — LLM-in-the-executor-seat adapter (Step 2); outcome-only, strict §C7 classification · `harness/llm_seat.py`
 - [llm_tier/llm_sweep_v3.md](llm_tier/llm_sweep_v3.md) — adaptive sweep driver (Step 3); batches → Wilson CIs → evasion rates · `harness/llm_sweep.py`
+- [llm_tier/llm_eval_v3.md](llm_tier/llm_eval_v3.md) — H1–H4 evaluator (Step 4a); Wilson-containment verdict over the stored grid · `harness/llm_eval.py`
 
 ## v3 completion-attestation core (B6–B9)
 - [adversary_v3.md](adversary_v3.md) — scripted adversary seats (honest / colluding) · `harness/adversary.py`

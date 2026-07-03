@@ -1,5 +1,5 @@
 """
-Scaffold smoke test (MASTER_PLAN_v3 P1): the v3 package exists and the
+Scaffold smoke test: the v3 package exists and the
 import-from-v2 reuse path resolves — pinning INV-6 (import v2, do not vendor).
 """
 

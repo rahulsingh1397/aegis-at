@@ -8,14 +8,22 @@ authors:
     # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"   # add once you register an ORCID (recommended)
 repository-code: "https://github.com/rahulsingh1397/aegis-at"
 abstract: >-
-  A reproducible, pre-registered adversarial benchmark measuring whether
-  OAuth 2.0 Token Exchange (RFC 8693) delegation preserves audit attribution
-  in multi-agent AI systems. v1 shows attribution regresses when delegation is
-  added (the standard records the requester, not the executor); v2 measures the
-  standardized fix (DPoP / RFC 9449 sender-constrained tokens recover
-  attribution), adds a Log Integrity Score, a 3-agent multi-hop topology, and
-  stochastic Wilson confidence intervals.
+  A reproducible, pre-registered adversarial benchmark measuring whether audit
+  attribution in multi-agent AI systems survives an adversary impersonating a
+  sibling agent. v1 shows attribution regresses when OAuth 2.0 Token Exchange
+  (RFC 8693) delegation is added (the standard records the requester, not the
+  executor); v2 measures the standardized fix (DPoP / RFC 9449 sender-constrained
+  tokens recover attribution), adds a Log Integrity Score, a 3-agent multi-hop
+  topology, and stochastic Wilson confidence intervals; v3 measures the 2026
+  completion-record layer (AIP / PEDIGREE / HDP), showing self-reported executor
+  attribution (B8) collapses under collusion while an independent verifier (B9)
+  holds, and that four open-weight LLMs forge the executor claim under B8 while
+  B9 evasion stays zero. Adds mTLS (RFC 8705) and A-JWT comparative baselines.
 license: Apache-2.0
+# `doi` below is the Zenodo CONCEPT DOI (all versions) — it always resolves to the
+# latest release and stays CONSTANT across releases. When the v3 release is cut,
+# bump ONLY `version` + `date-released` (do NOT change this doi). The v2.0.1
+# version-specific DOI is 10.5281/zenodo.20693304, verified via the Zenodo API.
 version: "v2.0.1"
 date-released: "2026-06-14"
 doi: "10.5281/zenodo.20693303"
@@ -28,4 +36,7 @@ keywords:
   - DPoP
   - sender-constrained tokens
   - confused deputy
+  - completion record
+  - self-attestation
+  - prompt injection
   - benchmark

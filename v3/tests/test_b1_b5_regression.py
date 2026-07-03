@@ -1,5 +1,5 @@
 """
-B1-B5 regression + MCP-transparency gate (MASTER_PLAN_v3 P1; mirrors
+B1-B5 regression + MCP-transparency gate (mirrors
 threat-model-v2.md §3.1 and threat-model-v3.md §7.1 B1-B5 / §7.4 inertness).
 
 Two INDEPENDENT properties (note: test 1 does NOT route the v2 sweep through
