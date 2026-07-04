@@ -36,6 +36,43 @@ must come from evidence the executor cannot author.
 
 ---
 
+## The v3 finding (latest)
+
+Completion records — an agent's own signed note of *what it did* — are the layer the
+2026 agent-identity proposals (AIP / PEDIGREE / HDP) add on top of delegation, and they
+default to **self-report**. v3 measures what that costs, then puts a real model in the seat.
+
+![Deterministic B1–B9 AIS curve: verifying the executor wins, trusting the self-report fails](Documents/Paper/v3/figures/fig_ais_curve_v3.png)
+
+The deterministic curve now spans nine baselines. Every defense that *verifies the executor
+at execution* — DPoP (B5), mTLS (B6, RFC 8705), A-JWT (B7), and an independent
+process-boundary verifier (B9) — holds at **AIS = 1.0** even under a colluding executor.
+The lone failure is **B8, the self-reported completion**: perfect when the agent is honest
+(1.0), zero the moment it lies (0.0).
+
+**Then a real model does the lying.** Four open-weight LLMs, weak → strong, are placed in
+the executor seat and induced by prompt injection to forge the completion's executor field:
+
+| Model (weak → strong) | B8 self-reported — forging rate | B9 tool-verified — evasion |
+| :-- | :--: | :--: |
+| Llama-3.1-8B  | 0.905 | **0.0** |
+| Llama-3.3-70B | 1.000 | **0.0** |
+| GPT-OSS-20B   | 1.000 | **0.0** |
+| GPT-OSS-120B  | 0.983 | **0.0** |
+
+![Per-model forging rate under B8 (self-reported) vs B9 (tool-verified), with Wilson 95% intervals](Documents/Paper/v3/figures/fig_llm_forging.png)
+
+Under self-report every model forges the executor ~90–100% of the time; under an independent
+verifier every attempt is nullified. Independent verification does not make the model honest —
+it makes the lie **inert**.
+
+> **Pre-registration at work:** the predicted capability curve (H1 — stronger models forge
+> more) came back **flat**, and is reported as a finding under a disclosed confound (the locked
+> prompt forces the completion call, saturating the rate) — not quietly dropped. Full detail in
+> the [v3 paper](Documents/Paper/v3/aegis-at-v3.pdf).
+
+---
+
 ## The v2 finding
 
 ![AIS across five baselines, two topologies](Documents/Paper/v2/figures/fig_ais_curve.png)
@@ -150,7 +187,7 @@ measurement is defensible:
 | :-- | :-- | :-- |
 | v1 | `v1/aegis-at/`, `v1/tests/core/`, `v1/scripts/check.sh`, `Documents/Paper/v1/` | **Frozen at tag `v1.0.0`** |
 | v2 | `v2/aegis_at_v2/`, `v2/tests/`, `Documents/ThreatModel/ThreatModelv2/`, `Documents/Paper/v2/` | Sender-constraint result complete |
-| v3 | `v3/aegis_at_v3/`, `v3/tests/`, `Documents/ThreatModel/ThreatModelv3/`, `Documents/Paper/v3/` | Completion-record + real-model LLM tier complete; paper in progress |
+| v3 | `v3/aegis_at_v3/`, `v3/tests/`, `Documents/ThreatModel/ThreatModelv3/`, `Documents/Paper/v3/` | **Complete — released `v3.0.0`** (17 pp paper + completion-record B8/B9, B6/B7, real-model LLM tier) |
 
 Every predicted value is **pre-registered** in SHA-256-locked threat models before
 the measuring code that asserts it. Contradicted predictions are reported as
