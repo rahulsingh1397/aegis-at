@@ -150,7 +150,7 @@ measurement is defensible:
 | :-- | :-- | :-- |
 | v1 | `v1/aegis-at/`, `v1/tests/core/`, `v1/scripts/check.sh`, `Documents/Paper/v1/` | **Frozen at tag `v1.0.0`** |
 | v2 | `v2/aegis_at_v2/`, `v2/tests/`, `Documents/ThreatModel/ThreatModelv2/`, `Documents/Paper/v2/` | Sender-constraint result complete |
-| v3 | `v3/aegis_at_v3/`, `v3/tests/`, `Documents/ThreatModel/ThreatModelv3/`, `Documents/Paper/v3/` | Completion-record + real-model LLM tier complete; paper in progress |
+| v3 | `v3/aegis_at_v3/`, `v3/tests/`, `Documents/ThreatModel/ThreatModelv3/`, `Documents/Paper/v3/` | Result complete (B1–B9 + Tier-2 real-model sweep recorded and locked); paper write-up in progress |
 
 Every predicted value is **pre-registered** in SHA-256-locked threat models before
 the measuring code that asserts it. Contradicted predictions are reported as
