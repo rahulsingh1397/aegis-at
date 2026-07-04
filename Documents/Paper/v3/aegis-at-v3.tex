@@ -577,6 +577,21 @@ evidential claim from it --- while the Tier-2 hypotheses are falsifiable
 predictions about model behavior, one of which (H1's rising curve) failed and is
 reported as a finding.
 
+\paragraph{External archival.} A SHA-256 lock enforced by our own CI proves little
+to a reader who does not trust our git history, so the complete locked artifact ---
+every \code{threat-model-v3*.md} with its \code{.sha256} receipt, alongside the code
+and this paper --- is additionally deposited at Zenodo (concept DOI
+\code{10.5281/zenodo.20693303}; the v3.0.0 snapshot at version DOI
+\code{10.5281/zenodo.21181036}, 2026-07-03~\cite{aegisv3zenodo}), giving the locked
+predictions an immutable, independently timestamped home outside the authors'
+control. We state the limit of this plainly: the deposit is contemporaneous with
+release, so it certifies the \emph{content} of the pre-registration at a trusted
+third party rather than proving temporal precedence over the measurements --- that
+ordering is carried by the version-controlled commit sequence, in which each threat
+model lands before the code that asserts it. The two together make the
+pre-registration independently auditable: the predictions cannot be silently revised
+after the fact without breaking either the archived receipts or the public DOI.
+
 \paragraph{The locked hypotheses.}
 For the record the results are judged against: \textbf{H1} --- under B8-attack
 the evasion rate is $>0$ for the most capable model and non-decreasing along
@@ -894,7 +909,9 @@ The complete v3 benchmark --- the two-stage SHA-256-locked threat model
 (deterministic core, B6/B7 amendment, and LLM-tier parameter lock), the
 completion-record and verification modules, the LLM seat and evaluator, and the
 test suite --- is released alongside the frozen v1 (tag \code{v1.0.0}) and v2
-artifacts. Code is licensed Apache-2.0; documentation CC~BY~4.0. Every Tier-1
+artifacts and archived at Zenodo (v3.0.0 DOI \code{10.5281/zenodo.21181036};
+concept DOI \code{10.5281/zenodo.20693303})~\cite{aegisv3zenodo}. Code is licensed
+Apache-2.0; documentation CC~BY~4.0. Every Tier-1
 \ais{} value is asserted in the test suite against a prediction locked before the
 measuring code; the Tier-2 hypotheses H1--H4 are asserted by Wilson containment
 over the recorded grid. The frozen Tier-2 sweep ships alongside the paper source
@@ -919,6 +936,11 @@ artifact, tag \code{v1.0.0}.
 \bibitem{aegisv2} R.~Singh, \emph{AEGIS-AT v2: Does Sender-Constraint Recover
 Attribution? DPoP, Chain Depth, and a Log-Integrity Metric}, 2026.
 \url{https://github.com/rahulsingh1397/AEGIS-AT}.
+
+\bibitem{aegisv3zenodo} R.~Singh, \emph{AEGIS-AT: Attribution Integrity Benchmark
+for Multi-Agent Delegation} (v3.0.0), Zenodo, 3~July 2026. Concept DOI
+\url{https://doi.org/10.5281/zenodo.20693303} (all versions); v3.0.0 version DOI
+\url{https://doi.org/10.5281/zenodo.21181036}.
 
 \bibitem{rfc8693} M.~Jones, A.~Nadalin, B.~Campbell, J.~Bradley, and C.~Mortimore,
 \emph{OAuth 2.0 Token Exchange}, RFC~8693, IETF, January 2020.
